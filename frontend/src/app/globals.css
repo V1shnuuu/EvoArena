@@ -3,15 +3,40 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0a0a0f;
-  --card: #111118;
-  --border: #1e1e2e;
-  --text: #e4e4ef;
-  --muted: #888899;
-  --accent: #6366f1;
-  --green: #22c55e;
-  --red: #ef4444;
-  --yellow: #eab308;
+  /* BNB Chain brand palette – Dark (default) */
+  --bg: #0B0E11;
+  --bg-secondary: #12161c;
+  --card: #14181e;
+  --card-hover: #1a1f27;
+  --border: #2b3139;
+  --text: #EAECEF;
+  --foreground: #EAECEF;
+  --muted: #848E9C;
+  --accent: #F0B90B;        /* BNB Gold */
+  --accent-hover: #F8D12F;
+  --accent-dim: #9e7c08;
+  --green: #0ECB81;
+  --red: #F6465D;
+  --yellow: #F0B90B;
+  --blue: #1E9FF2;
+}
+
+[data-theme="light"] {
+  --bg: #F5F5F5;
+  --bg-secondary: #EAEAEA;
+  --card: #FFFFFF;
+  --card-hover: #F0F0F0;
+  --border: #D1D5DB;
+  --text: #1A1A1A;
+  --foreground: #1A1A1A;
+  --muted: #6B7280;
+  --accent: #C99400;
+  --accent-hover: #B38600;
+  --accent-dim: #9e7c08;
+  --green: #0A9F66;
+  --red: #DC2626;
+  --yellow: #C99400;
+  --blue: #1D7DC4;
 }
 
 body {
@@ -19,3 +44,39 @@ body {
   color: var(--text);
   font-family: 'Inter', system-ui, sans-serif;
 }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Selection */
+::selection { background: rgba(240, 185, 11, 0.25); color: #fff; }
+
+/* Glow effect for accent elements */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(240, 185, 11, 0.15), 0 0 60px rgba(240, 185, 11, 0.05);
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.animate-slide-in {
+  animation: slide-in 0.25s ease-out;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--card) 25%, var(--card-hover) 50%, var(--card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+

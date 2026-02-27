@@ -18,21 +18,22 @@ import {
 import { ParameterEvent } from "@/hooks/useEvoPool";
 
 const CHART_COLORS = {
-  fee: "#6366f1",
-  beta: "#22c55e",
-  mode: "#eab308",
-  reserve0: "#6366f1",
-  reserve1: "#22c55e",
-  aps: "#f59e0b",
-  slippage: "#ef4444",
-  volume: "#8b5cf6",
+  fee: "#F0B90B",
+  beta: "#0ECB81",
+  mode: "#F0B90B",
+  reserve0: "#F0B90B",
+  reserve1: "#0ECB81",
+  aps: "#F0B90B",
+  slippage: "#F6465D",
+  volume: "#1E9FF2",
 };
 
 const tooltipStyle = {
-  backgroundColor: "#111118",
-  border: "1px solid #1e1e2e",
+  backgroundColor: "#14181e",
+  border: "1px solid #2b3139",
   borderRadius: "8px",
   fontSize: "12px",
+  color: "#EAECEF",
 };
 
 // ── Fee & Beta Over Time ────────────────────────────────────────────
@@ -50,10 +51,10 @@ export function FeeHistoryChart({ data }: { data: ParameterEvent[] }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-        <XAxis dataKey="index" tick={{ fontSize: 11, fill: "#888899" }} label={{ value: "Update #", position: "insideBottom", offset: -5, fill: "#888899", fontSize: 11 }} />
-        <YAxis yAxisId="fee" tick={{ fontSize: 11, fill: "#888899" }} label={{ value: "Fee (bps)", angle: -90, position: "insideLeft", fill: "#888899", fontSize: 11 }} />
-        <YAxis yAxisId="beta" orientation="right" tick={{ fontSize: 11, fill: "#888899" }} label={{ value: "Beta", angle: 90, position: "insideRight", fill: "#888899", fontSize: 11 }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#2b3139" />
+        <XAxis dataKey="index" tick={{ fontSize: 11, fill: "#848E9C" }} label={{ value: "Update #", position: "insideBottom", offset: -5, fill: "#848E9C", fontSize: 11 }} />
+        <YAxis yAxisId="fee" tick={{ fontSize: 11, fill: "#848E9C" }} label={{ value: "Fee (bps)", angle: -90, position: "insideLeft", fill: "#848E9C", fontSize: 11 }} />
+        <YAxis yAxisId="beta" orientation="right" tick={{ fontSize: 11, fill: "#848E9C" }} label={{ value: "Beta", angle: 90, position: "insideRight", fill: "#848E9C", fontSize: 11 }} />
         <Tooltip contentStyle={tooltipStyle} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Line yAxisId="fee" type="stepAfter" dataKey="fee" stroke={CHART_COLORS.fee} strokeWidth={2} dot={{ r: 3 }} name="Fee (bps)" />
@@ -68,7 +69,7 @@ export function ModeTimelineChart({ data }: { data: ParameterEvent[] }) {
   if (data.length === 0) return <EmptyChart label="No mode changes yet" />;
 
   const modeNames = ["Normal", "Defensive", "VolAdaptive"];
-  const modeColors = ["#22c55e", "#ef4444", "#eab308"];
+  const modeColors = ["#0ECB81", "#F6465D", "#F0B90B"];
 
   const chartData = data.map((d, i) => ({
     index: i + 1,
@@ -80,9 +81,9 @@ export function ModeTimelineChart({ data }: { data: ParameterEvent[] }) {
   return (
     <ResponsiveContainer width="100%" height={160}>
       <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-        <XAxis dataKey="index" tick={{ fontSize: 11, fill: "#888899" }} />
-        <YAxis domain={[0, 2]} ticks={[0, 1, 2]} tickFormatter={(v) => modeNames[v] || ""} tick={{ fontSize: 10, fill: "#888899" }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#2b3139" />
+        <XAxis dataKey="index" tick={{ fontSize: 11, fill: "#848E9C" }} />
+        <YAxis domain={[0, 2]} ticks={[0, 1, 2]} tickFormatter={(v) => modeNames[v] || ""} tick={{ fontSize: 10, fill: "#848E9C" }} />
         <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => modeNames[value] || value} />
         <Bar dataKey="mode" name="Curve Mode" radius={[4, 4, 0, 0]}>
           {chartData.map((entry, index) => (
@@ -114,9 +115,9 @@ export function ReserveChart({ data }: { data: ReserveSnapshot[] }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <AreaChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-        <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#888899" }} />
-        <YAxis tick={{ fontSize: 11, fill: "#888899" }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#2b3139" />
+        <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#848E9C" }} />
+        <YAxis tick={{ fontSize: 11, fill: "#848E9C" }} />
         <Tooltip contentStyle={tooltipStyle} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Area type="monotone" dataKey="EVOA" stroke={CHART_COLORS.reserve0} fill={CHART_COLORS.reserve0} fillOpacity={0.15} strokeWidth={2} />
@@ -143,9 +144,9 @@ export function APSChart({ data }: { data: APSDataPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={280}>
       <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-        <XAxis dataKey="epoch" tick={{ fontSize: 11, fill: "#888899" }} label={{ value: "Epoch", position: "insideBottom", offset: -5, fill: "#888899", fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11, fill: "#888899" }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#2b3139" />
+        <XAxis dataKey="epoch" tick={{ fontSize: 11, fill: "#848E9C" }} label={{ value: "Epoch", position: "insideBottom", offset: -5, fill: "#848E9C", fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11, fill: "#848E9C" }} />
         <Tooltip contentStyle={tooltipStyle} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Line type="monotone" dataKey="aps" stroke={CHART_COLORS.aps} strokeWidth={3} dot={{ r: 4 }} name="APS (composite)" />

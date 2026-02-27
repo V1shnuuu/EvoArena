@@ -101,32 +101,36 @@ export function useAgents() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      if (!ADDRESSES.agentController) return;
-      try {
-        const ctrl = getController();
-        const count = Number(await ctrl.getAgentCount());
-        const list: AgentInfo[] = [];
-        for (let i = 0; i < count; i++) {
-          const addr = await ctrl.agentList(i);
-          const info = await ctrl.getAgentInfo(addr);
-          list.push({
-            address: info.agentAddress,
-            bondAmount: ethers.formatEther(info.bondAmount),
-            registeredAt: Number(info.registeredAt),
-            lastUpdateTime: Number(info.lastUpdateTime),
-            active: info.active,
-          });
-        }
-        setAgents(list);
-      } catch (e) {
-        console.error("useAgents error:", e);
-      } finally {
-        setLoading(false);
+  const fetchAgents = useCallback(async () => {
+    if (!ADDRESSES.agentController) return;
+    try {
+      const ctrl = getController();
+      const count = Number(await ctrl.getAgentCount());
+      const list: AgentInfo[] = [];
+      for (let i = 0; i < count; i++) {
+        const addr = await ctrl.agentList(i);
+        const info = await ctrl.getAgentInfo(addr);
+        list.push({
+          address: info.agentAddress,
+          bondAmount: ethers.formatEther(info.bondAmount),
+          registeredAt: Number(info.registeredAt),
+          lastUpdateTime: Number(info.lastUpdateTime),
+          active: info.active,
+        });
       }
-    })();
+      setAgents(list);
+    } catch (e) {
+      console.error("useAgents error:", e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchAgents();
+    const id = setInterval(fetchAgents, 15000);
+    return () => clearInterval(id);
+  }, [fetchAgents]);
 
   return { agents, loading };
 }

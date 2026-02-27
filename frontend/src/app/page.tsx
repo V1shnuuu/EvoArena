@@ -58,9 +58,39 @@ export default function PoolPage() {
 
   if (loading || !state) {
     return (
-      <div className="text-center py-20">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-[var(--accent)] border-t-transparent"></div>
-        <p className="text-[var(--muted)] mt-4">Loading pool state…</p>
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">🏊 <span className="text-[var(--accent)]">EvoPool</span></h1>
+        <p className="text-[var(--muted)]">Adaptive AMM with dynamic curve, fee, and mode control — on BNB Chain</p>
+        {/* Skeleton stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+              <div className="skeleton h-3 w-16 mb-3"></div>
+              <div className="skeleton h-7 w-24 mb-1"></div>
+              <div className="skeleton h-3 w-12"></div>
+            </div>
+          ))}
+        </div>
+        {/* Skeleton parameter cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+              <div className="skeleton h-3 w-12 mb-3"></div>
+              <div className="skeleton h-9 w-20"></div>
+            </div>
+          ))}
+        </div>
+        {/* Skeleton charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+            <div className="skeleton h-3 w-32 mb-3"></div>
+            <div className="skeleton h-48 w-full"></div>
+          </div>
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+            <div className="skeleton h-3 w-32 mb-3"></div>
+            <div className="skeleton h-48 w-full"></div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -73,8 +103,8 @@ export default function PoolPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">🏊 EvoPool</h1>
-      <p className="text-[var(--muted)]">Adaptive AMM with dynamic curve, fee, and mode control</p>
+      <h1 className="text-3xl font-bold">🏊 <span className="text-[var(--accent)]">EvoPool</span></h1>
+      <p className="text-[var(--muted)]">Adaptive AMM with dynamic curve, fee, and mode control — on BNB Chain</p>
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

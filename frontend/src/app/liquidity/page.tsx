@@ -4,19 +4,23 @@ import { useState } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "@/hooks/useWallet";
 import { usePoolState } from "@/hooks/useEvoPool";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { useToast } from "@/components/Toast";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { EVOPOOL_ABI, ERC20_ABI, ADDRESSES, BSC_TESTNET_RPC } from "@/lib/contracts";
 
 export default function LiquidityPage() {
-  const { signer, connected, connect, address } = useWallet();
+  const { signer, connected, address } = useWallet();
   const { state, refetch } = usePoolState(5000);
+  const { addToast, updateToast } = useToast();
+  const { balanceA, balanceB, refetchBalances } = useTokenBalances(address);
   const [tab, setTab] = useState<"add" | "remove">("add");
   const [amount0, setAmount0] = useState("");
   const [amount1, setAmount1] = useState("");
   const [lpAmount, setLpAmount] = useState("");
-  const [txStatus, setTxStatus] = useState<string | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [lpBalance, setLpBalance] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState<"add" | "remove" | null>(null);
 
   // Fetch LP balance
   const fetchLPBalance = async () => {
@@ -30,12 +34,11 @@ export default function LiquidityPage() {
   if (connected && lpBalance === null) fetchLPBalance();
 
   const handleAddLiquidity = async () => {
-    if (!signer || !connected) { await connect(); return; }
+    if (!signer || !connected) return;
     if (!amount0 || !amount1 || Number(amount0) <= 0 || Number(amount1) <= 0) return;
 
     setSubmitting(true);
-    setTxStatus("Preparing...");
-    setTxHash(null);
+    const toastId = addToast({ type: "loading", title: "Preparing…" });
 
     try {
       const pool = new ethers.Contract(ADDRESSES.evoPool, EVOPOOL_ABI, signer);
@@ -47,61 +50,70 @@ export default function LiquidityPage() {
       const poolAddr = ADDRESSES.evoPool;
 
       // Approve tokens
-      setTxStatus("Approving Token A...");
+      updateToast(toastId, { title: "Approving Token A…" });
       const allow0 = await tokenAContract.allowance(address, poolAddr);
       if (allow0 < amt0) {
         const tx = await tokenAContract.approve(poolAddr, amt0);
         await tx.wait();
       }
 
-      setTxStatus("Approving Token B...");
+      updateToast(toastId, { title: "Approving Token B…" });
       const allow1 = await tokenBContract.allowance(address, poolAddr);
       if (allow1 < amt1) {
         const tx = await tokenBContract.approve(poolAddr, amt1);
         await tx.wait();
       }
 
-      setTxStatus("Adding liquidity...");
+      updateToast(toastId, { title: "Adding liquidity…" });
       const tx = await pool.addLiquidity(amt0, amt1);
-      setTxHash(tx.hash);
-      setTxStatus("Confirming...");
+      updateToast(toastId, { title: "Confirming…", txHash: tx.hash });
       await tx.wait();
 
-      setTxStatus("✅ Liquidity added!");
+      updateToast(toastId, {
+        type: "success",
+        title: "Liquidity added!",
+        message: `${amount0} EVOA + ${amount1} EVOB`,
+        txHash: tx.hash,
+      });
       setAmount0("");
       setAmount1("");
       await refetch();
       await fetchLPBalance();
+      refetchBalances();
     } catch (err: any) {
-      setTxStatus(`❌ ${err.reason || err.message}`);
+      updateToast(toastId, { type: "error", title: "Add liquidity failed", message: err.reason || err.message });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleRemoveLiquidity = async () => {
-    if (!signer || !connected) { await connect(); return; }
+    if (!signer || !connected) return;
     if (!lpAmount || Number(lpAmount) <= 0) return;
 
     setSubmitting(true);
-    setTxStatus("Removing liquidity...");
-    setTxHash(null);
+    const toastId = addToast({ type: "loading", title: "Removing liquidity…" });
 
     try {
       const pool = new ethers.Contract(ADDRESSES.evoPool, EVOPOOL_ABI, signer);
       const lpWei = ethers.parseEther(lpAmount);
 
       const tx = await pool.removeLiquidity(lpWei);
-      setTxHash(tx.hash);
-      setTxStatus("Confirming...");
+      updateToast(toastId, { title: "Confirming…", txHash: tx.hash });
       await tx.wait();
 
-      setTxStatus("✅ Liquidity removed!");
+      updateToast(toastId, {
+        type: "success",
+        title: "Liquidity removed!",
+        message: `Burned ${lpAmount} EVO-LP`,
+        txHash: tx.hash,
+      });
       setLpAmount("");
       await refetch();
       await fetchLPBalance();
+      refetchBalances();
     } catch (err: any) {
-      setTxStatus(`❌ ${err.reason || err.message}`);
+      updateToast(toastId, { type: "error", title: "Remove liquidity failed", message: err.reason || err.message });
     } finally {
       setSubmitting(false);
     }
@@ -133,6 +145,30 @@ export default function LiquidityPage() {
               <span className="font-bold text-[var(--accent)]">{Number(lpBalance).toFixed(6)} EVO-LP</span>
             </div>
           )}
+          {lpBalance && Number(lpBalance) > 0 && Number(state.totalSupply) > 0 && (
+            <>
+              <div className="border-t border-[var(--border)] my-2" />
+              <p className="text-xs text-[var(--muted)] font-semibold">Your Position Value</p>
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">EVOA share</span>
+                <span className="font-mono text-[var(--foreground)]">
+                  {(Number(lpBalance) / Number(state.totalSupply) * Number(state.reserve0)).toFixed(4)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">EVOB share</span>
+                <span className="font-mono text-[var(--foreground)]">
+                  {(Number(lpBalance) / Number(state.totalSupply) * Number(state.reserve1)).toFixed(4)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">Pool share</span>
+                <span className="font-mono text-[var(--accent)]">
+                  {(Number(lpBalance) / Number(state.totalSupply) * 100).toFixed(2)}%
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -156,18 +192,34 @@ export default function LiquidityPage() {
       {tab === "add" && (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-6 space-y-4">
           <div>
-            <label className="text-xs text-[var(--muted)] mb-1 block">EVOA Amount</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-[var(--muted)]">EVOA Amount</label>
+              {connected && balanceA && (
+                <span className="text-xs text-[var(--muted)]">
+                  Balance: <span className="font-mono text-[var(--text)]">{Number(balanceA).toFixed(4)}</span>
+                  <button onClick={() => setAmount0(balanceA)} className="ml-1 text-[var(--accent)] font-bold hover:underline cursor-pointer">MAX</button>
+                </span>
+              )}
+            </div>
             <input type="number" value={amount0} onChange={(e) => setAmount0(e.target.value)} placeholder="0.0"
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)] transition" />
           </div>
           <div>
-            <label className="text-xs text-[var(--muted)] mb-1 block">EVOB Amount</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-[var(--muted)]">EVOB Amount</label>
+              {connected && balanceB && (
+                <span className="text-xs text-[var(--muted)]">
+                  Balance: <span className="font-mono text-[var(--text)]">{Number(balanceB).toFixed(4)}</span>
+                  <button onClick={() => setAmount1(balanceB)} className="ml-1 text-[var(--accent)] font-bold hover:underline cursor-pointer">MAX</button>
+                </span>
+              )}
+            </div>
             <input type="number" value={amount1} onChange={(e) => setAmount1(e.target.value)} placeholder="0.0"
               className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-4 py-3 text-lg font-bold focus:outline-none focus:border-[var(--accent)] transition" />
           </div>
-          <button onClick={handleAddLiquidity} disabled={submitting}
-            className={`w-full py-3 rounded-lg font-semibold text-white transition cursor-pointer ${submitting ? "bg-gray-600 cursor-not-allowed" : connected ? "bg-[var(--green)] hover:bg-green-600" : "bg-[var(--accent)] hover:bg-indigo-500"}`}>
-            {submitting ? "⏳ " + txStatus : connected ? "💧 Add Liquidity" : "🔗 Connect Wallet"}
+          <button onClick={() => setShowConfirm("add")} disabled={submitting || !connected || (!amount0 || Number(amount0) <= 0) || (!amount1 || Number(amount1) <= 0)}
+            className={`w-full py-3 rounded-lg font-semibold text-white transition cursor-pointer ${submitting ? "bg-gray-600 cursor-not-allowed" : !connected ? "bg-gray-600 cursor-not-allowed text-gray-400" : "bg-[var(--green)] hover:bg-green-600"}`}>
+            {submitting ? "⏳ Adding…" : !connected ? "🔗 Connect wallet in navbar" : "💧 Add Liquidity"}
           </button>
         </div>
       )}
@@ -185,23 +237,55 @@ export default function LiquidityPage() {
               </button>
             )}
           </div>
-          <button onClick={handleRemoveLiquidity} disabled={submitting}
-            className={`w-full py-3 rounded-lg font-semibold text-white transition cursor-pointer ${submitting ? "bg-gray-600 cursor-not-allowed" : connected ? "bg-[var(--red)] hover:bg-red-600" : "bg-[var(--accent)] hover:bg-indigo-500"}`}>
-            {submitting ? "⏳ " + txStatus : connected ? "🔥 Remove Liquidity" : "🔗 Connect Wallet"}
+          <button onClick={() => setShowConfirm("remove")} disabled={submitting || !connected || (!lpAmount || Number(lpAmount) <= 0)}
+            className={`w-full py-3 rounded-lg font-semibold text-white transition cursor-pointer ${submitting ? "bg-gray-600 cursor-not-allowed" : !connected ? "bg-gray-600 cursor-not-allowed text-gray-400" : "bg-[var(--red)] hover:bg-red-600"}`}>
+            {submitting ? "⏳ Removing…" : !connected ? "🔗 Connect wallet in navbar" : "🔥 Remove Liquidity"}
           </button>
         </div>
       )}
 
-      {/* Status */}
-      {txStatus && !submitting && (
-        <div className="text-sm text-center">
-          <p>{txStatus}</p>
-          {txHash && (
-            <a href={`https://testnet.bscscan.com/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
-              className="text-[var(--accent)] hover:underline text-xs">View on BscScan ↗</a>
-          )}
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        open={showConfirm === "add"}
+        title="Confirm Add Liquidity"
+        confirmLabel="Add Liquidity"
+        onCancel={() => setShowConfirm(null)}
+        onConfirm={() => { setShowConfirm(null); handleAddLiquidity(); }}
+        loading={submitting}
+      >
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-[var(--muted)]">EVOA deposit</span>
+            <span className="font-mono text-[var(--foreground)]">{amount0}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[var(--muted)]">EVOB deposit</span>
+            <span className="font-mono text-[var(--foreground)]">{amount1}</span>
+          </div>
+          <p className="text-xs text-[var(--muted)] pt-2 border-t border-[var(--border)]">
+            You will receive LP tokens proportional to your share of the pool.
+          </p>
         </div>
-      )}
+      </ConfirmModal>
+
+      <ConfirmModal
+        open={showConfirm === "remove"}
+        title="Confirm Remove Liquidity"
+        confirmLabel="Remove Liquidity"
+        onCancel={() => setShowConfirm(null)}
+        onConfirm={() => { setShowConfirm(null); handleRemoveLiquidity(); }}
+        loading={submitting}
+      >
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-[var(--muted)]">LP tokens to burn</span>
+            <span className="font-mono text-[var(--foreground)]">{lpAmount}</span>
+          </div>
+          <p className="text-xs text-[var(--muted)] pt-2 border-t border-[var(--border)]">
+            You will receive EVOA and EVOB proportional to your LP share.
+          </p>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }
