@@ -49,4 +49,9 @@ interface IEvoPool {
     // ── Access ──────────────────────────────────────────────────────────
     function epochManager() external view returns (address);
     function setEpochManager(address _epochManager) external;
+
+    // ── Emergency ───────────────────────────────────────────────────────
+    function paused() external view returns (bool);
+    function pause() external;
+    function unpause() external;
 }

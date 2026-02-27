@@ -71,6 +71,9 @@ contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
     // ── Rate limit ──────────────────────────────────────────────────────
     uint256 public parameterUpdateBlock; // block when last parameter update takes effect
 
+    // ── Pause ────────────────────────────────────────────────────────────
+    bool public paused;
+
     // ── Errors ──────────────────────────────────────────────────────────
     error ZeroAmount();
     error InsufficientOutput();
@@ -80,9 +83,15 @@ contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
     error FeeTooHigh();
     error InvalidCurveMode();
     error ProtocolFeeTooHigh();
+    error PoolPaused();
 
     modifier onlyController() {
         if (msg.sender != controller && msg.sender != epochManager) revert OnlyController();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert PoolPaused();
         _;
     }
 
@@ -137,6 +146,12 @@ contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
     function setTreasury(address _treasury) external onlyOwner {
         treasury = _treasury;
     }
+
+    /// @notice Emergency pause — blocks swaps and new liquidity.
+    function pause() external onlyOwner { paused = true; }
+
+    /// @notice Unpause pool operations.
+    function unpause() external onlyOwner { paused = false; }
 
     /**
      * @notice Collect accumulated protocol fees to treasury.
@@ -193,7 +208,7 @@ contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
     function addLiquidity(
         uint256 amount0,
         uint256 amount1
-    ) external override nonReentrant returns (uint256 liquidity) {
+    ) external override nonReentrant whenNotPaused returns (uint256 liquidity) {
         if (amount0 == 0 || amount1 == 0) revert ZeroAmount();
 
         _updateTWAP();
@@ -271,7 +286,7 @@ contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
         bool zeroForOne,
         uint256 amountIn,
         uint256 minAmountOut
-    ) external override nonReentrant returns (uint256 amountOut) {
+    ) external override nonReentrant whenNotPaused returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
         if (reserve0 == 0 || reserve1 == 0) revert InsufficientLiquidity();
 

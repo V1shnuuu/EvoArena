@@ -124,13 +124,15 @@ export class Executor {
 
       // 3. Check reserve imbalance
       const [r0, r1] = await this.pool.getReserves();
-      const reserve0 = Number(r0);
-      const reserve1 = Number(r1);
+      const reserve0 = Number(ethers.formatEther(r0));
+      const reserve1 = Number(ethers.formatEther(r1));
       if (reserve0 > 0 && reserve1 > 0) {
         const ratio = Math.max(reserve0 / reserve1, reserve1 / reserve0);
-        if (ratio > 1 / (1 - CIRCUIT_BREAKER.maxReserveImbalance) + 1) {
-          this.addAlert("critical", "Circuit breaker: reserve imbalance too high", { ratio: ratio.toFixed(4) });
-          return { safe: false, reason: `reserve ratio ${ratio.toFixed(2)}:1` };
+        // Halt if ratio exceeds 2:1 (i.e., one side is 2x the other)
+        const maxRatio = 1 / (1 - CIRCUIT_BREAKER.maxReserveImbalance);
+        if (ratio > maxRatio) {
+          this.addAlert("critical", "Circuit breaker: reserve imbalance too high", { ratio: ratio.toFixed(4), threshold: maxRatio.toFixed(2) });
+          return { safe: false, reason: `reserve ratio ${ratio.toFixed(2)}:1 > ${maxRatio.toFixed(1)}:1` };
         }
       }
 
@@ -258,6 +260,23 @@ export class Executor {
         summary.expectedImpact = `CIRCUIT-BREAKER: ${cb.reason}`;
         this.saveSummary(summary);
         return summary;
+      }
+
+      // Pre-check cooldown to avoid wasting gas on a revert
+      try {
+        const info = await this.controller.getAgentInfo(this.agentAddress);
+        const cooldown = Number(await this.controller.cooldownSeconds());
+        const lastUpdate = Number(info.lastUpdateTime);
+        const now = Math.floor(Date.now() / 1000);
+        if (lastUpdate > 0 && now - lastUpdate < cooldown) {
+          const remaining = cooldown - (now - lastUpdate);
+          console.log(`[agent] ⏳ Cooldown active (${remaining}s remaining). Skipping update.`);
+          summary.expectedImpact = `COOLDOWN: ${remaining}s remaining`;
+          this.saveSummary(summary);
+          return summary;
+        }
+      } catch (err: any) {
+        console.warn(`[agent] Cooldown pre-check failed: ${err.message}`);
       }
 
       console.log(`[agent] Submitting update:`, summary.proposedParams);

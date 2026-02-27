@@ -65,7 +65,9 @@ export function usePoolState(refreshInterval = 10000) {
 
       const reserve0 = ethers.formatEther(r0);
       const reserve1 = ethers.formatEther(r1);
-      const price = Number(r1) > 0 ? (Number(r0) / Number(r1)).toFixed(6) : "0";
+      const price = Number(reserve1) > 0
+        ? (Number(reserve0) / Number(reserve1)).toFixed(6)
+        : "0";
 
       setState({
         reserve0,

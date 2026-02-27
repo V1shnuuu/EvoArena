@@ -30,6 +30,7 @@ export const EVOPOOL_ABI = [
   "function treasury() view returns (address)",
   "function parameterUpdateBlock() view returns (uint256)",
   "function epochManager() view returns (address)",
+  "function paused() view returns (bool)",
   "event Swap(address indexed sender, bool zeroForOne, uint256 amountIn, uint256 amountOut, uint256 feeAmount)",
   "event LiquidityAdded(address indexed provider, uint256 amount0, uint256 amount1, uint256 liquidity)",
   "event LiquidityRemoved(address indexed provider, uint256 amount0, uint256 amount1, uint256 liquidity)",

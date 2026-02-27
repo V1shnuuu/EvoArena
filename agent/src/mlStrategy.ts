@@ -168,8 +168,9 @@ export class MLStrategyEngine {
     const predicted = this.predict(featureVec);
 
     // Target: scale the applied actions by the APS reward
-    // If APS was positive, reinforce the actions; if negative, push away
-    const rewardScale = Math.max(0, apsReward * 10); // amplify reward signal
+    // Positive APS reinforces actions; negative APS pushes away
+    // Clamp to [-2, 2] range to prevent gradient explosion
+    const rewardScale = Math.max(-2, Math.min(2, apsReward * 10));
     const targets = [
       appliedFeeDelta * rewardScale,
       appliedBetaDelta * rewardScale,

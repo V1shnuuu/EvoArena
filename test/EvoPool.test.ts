@@ -391,4 +391,50 @@ describe("EvoPool", function () {
       expect(await pool.protocolFeeAccum0()).to.equal(0);
     });
   });
+
+  describe("Emergency Pause", function () {
+    beforeEach(async function () {
+      await tokenA.transfer(lp.address, ethers.parseEther("10000"));
+      await tokenB.transfer(lp.address, ethers.parseEther("10000"));
+      await tokenA.connect(lp).approve(await pool.getAddress(), ethers.parseEther("10000"));
+      await tokenB.connect(lp).approve(await pool.getAddress(), ethers.parseEther("10000"));
+      await pool.connect(lp).addLiquidity(ethers.parseEther("1000"), ethers.parseEther("1000"));
+    });
+
+    it("should block swaps when paused", async function () {
+      await pool.pause();
+      await tokenA.transfer(trader.address, ethers.parseEther("100"));
+      await tokenA.connect(trader).approve(await pool.getAddress(), ethers.parseEther("100"));
+      await expect(
+        pool.connect(trader).swap(true, ethers.parseEther("10"), 0)
+      ).to.be.revertedWithCustomError(pool, "PoolPaused");
+    });
+
+    it("should block addLiquidity when paused", async function () {
+      await pool.pause();
+      await expect(
+        pool.connect(lp).addLiquidity(ethers.parseEther("10"), ethers.parseEther("10"))
+      ).to.be.revertedWithCustomError(pool, "PoolPaused");
+    });
+
+    it("should allow removeLiquidity when paused (emergency exit)", async function () {
+      await pool.pause();
+      const lpBal = await pool.balanceOf(lp.address);
+      await expect(pool.connect(lp).removeLiquidity(lpBal / 2n)).to.not.be.reverted;
+    });
+
+    it("should resume after unpause", async function () {
+      await pool.pause();
+      await pool.unpause();
+      await tokenA.transfer(trader.address, ethers.parseEther("100"));
+      await tokenA.connect(trader).approve(await pool.getAddress(), ethers.parseEther("100"));
+      await expect(
+        pool.connect(trader).swap(true, ethers.parseEther("10"), 0)
+      ).to.not.be.reverted;
+    });
+
+    it("should only allow owner to pause", async function () {
+      await expect(pool.connect(trader).pause()).to.be.reverted;
+    });
+  });
 });

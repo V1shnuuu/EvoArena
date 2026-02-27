@@ -117,7 +117,18 @@ async function main() {
   await deployer.sendTransaction({ to: epochManagerAddr, value: rewardFunding });
   console.log("EpochManager funded with 1 BNB for rewards");
 
-  // ── 10. Save deployment addresses ─────────────────────────────────
+  // ── 10. Transfer ownership to TimeLock (governance) ───────────────
+  //   Direct controller updates are kept for agents acting outside epochs.
+  //   EpochManager handles competitive epoch-based updates.
+  //   TimeLock governs admin functions (setProtocolFee, pause, setScorer, etc).
+  await pool.transferOwnership(timeLockAddr);
+  console.log("EvoPool ownership transferred to TimeLock");
+  await controller.transferOwnership(timeLockAddr);
+  console.log("AgentController ownership transferred to TimeLock");
+  await epochManager.transferOwnership(timeLockAddr);
+  console.log("EpochManager ownership transferred to TimeLock");
+
+  // ── 11. Save deployment addresses ─────────────────────────────────
   const deployment = {
     network: (await ethers.provider.getNetwork()).name,
     chainId: Number((await ethers.provider.getNetwork()).chainId),
