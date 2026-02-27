@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { ethers } from "ethers";
-import { connectWallet, getWalletAddress } from "@/lib/wallet";
+import { connectWallet, getWalletAddress, WalletType, getAvailableWallets } from "@/lib/wallet";
 
 interface WalletContextType {
   address: string | null;
@@ -10,7 +10,9 @@ interface WalletContextType {
   provider: ethers.BrowserProvider | null;
   connected: boolean;
   connecting: boolean;
-  connect: () => Promise<void>;
+  walletType: WalletType | null;
+  availableWallets: WalletType[];
+  connect: (type?: WalletType) => Promise<void>;
   disconnect: () => void;
 }
 
@@ -20,6 +22,8 @@ const WalletContext = createContext<WalletContextType>({
   provider: null,
   connected: false,
   connecting: false,
+  walletType: null,
+  availableWallets: [],
   connect: async () => {},
   disconnect: () => {},
 });
@@ -29,17 +33,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [walletType, setWalletType] = useState<WalletType | null>(null);
+  const [availableWallets] = useState<WalletType[]>(() =>
+    typeof window !== "undefined" ? getAvailableWallets() : []
+  );
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (type: WalletType = "metamask") => {
     setConnecting(true);
     try {
-      const p = await connectWallet();
+      const p = await connectWallet(type);
       if (p) {
         const s = await p.getSigner();
         const addr = await s.getAddress();
         setProvider(p);
         setSigner(s);
         setAddress(addr);
+        setWalletType(type);
       }
     } catch (err) {
       console.error("Wallet connect error:", err);
@@ -52,6 +61,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
     setSigner(null);
     setProvider(null);
+    setWalletType(null);
   }, []);
 
   // Auto-reconnect if already connected
@@ -93,6 +103,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         provider,
         connected: !!address,
         connecting,
+        walletType,
+        availableWallets,
         connect,
         disconnect,
       }}

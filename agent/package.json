@@ -7,8 +7,13 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "once": "node dist/index.js --once",
+    "ml": "node dist/index.js --ml",
+    "ml:once": "node dist/index.js --once --ml",
+    "backtest": "ts-node src/backtester.ts",
+    "backtest:high": "ts-node src/backtester.ts --scenario=high --epochs=100",
     "dev": "ts-node src/index.ts",
-    "dev:once": "ts-node src/index.ts --once"
+    "dev:once": "ts-node src/index.ts --once",
+    "dev:ml": "ts-node src/index.ts --ml --once"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

@@ -1,0 +1,104 @@
+# EvoArena Subgraph Schema
+
+type Swap @entity {
+  id: ID!
+  sender: Bytes!
+  zeroForOne: Boolean!
+  amountIn: BigInt!
+  amountOut: BigInt!
+  feeAmount: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+}
+
+type LiquidityEvent @entity {
+  id: ID!
+  provider: Bytes!
+  amount0: BigInt!
+  amount1: BigInt!
+  liquidity: BigInt!
+  isAdd: Boolean!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+}
+
+type ParameterUpdate @entity {
+  id: ID!
+  agent: Bytes!
+  newFeeBps: BigInt!
+  newCurveBeta: BigInt!
+  newMode: Int!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+}
+
+type ProtocolFeeCollection @entity {
+  id: ID!
+  amount0: BigInt!
+  amount1: BigInt!
+  treasury: Bytes!
+  timestamp: BigInt!
+}
+
+type Agent @entity {
+  id: ID!
+  address: Bytes!
+  bondAmount: BigInt!
+  registeredAt: BigInt!
+  active: Boolean!
+  updateCount: BigInt!
+  slashCount: BigInt!
+  totalSlashed: BigInt!
+}
+
+type SlashEvent @entity {
+  id: ID!
+  agent: Bytes!
+  amount: BigInt!
+  reason: String!
+  timestamp: BigInt!
+}
+
+type Epoch @entity {
+  id: ID!
+  epochId: BigInt!
+  startTime: BigInt!
+  endTime: BigInt!
+  winner: Bytes
+  winnerScore: BigInt
+  proposalCount: BigInt!
+  finalized: Boolean!
+}
+
+type Proposal @entity {
+  id: ID!
+  epochId: BigInt!
+  agent: Bytes!
+  feeBps: BigInt!
+  curveBeta: BigInt!
+  curveMode: Int!
+  timestamp: BigInt!
+}
+
+type RewardClaim @entity {
+  id: ID!
+  epochId: BigInt!
+  winner: Bytes!
+  amount: BigInt!
+  timestamp: BigInt!
+}
+
+type PoolSnapshot @entity {
+  id: ID!
+  reserve0: BigInt!
+  reserve1: BigInt!
+  feeBps: BigInt!
+  curveBeta: BigInt!
+  curveMode: Int!
+  totalSupply: BigInt!
+  tradeCount: BigInt!
+  cumulativeVolume0: BigInt!
+  cumulativeVolume1: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+}

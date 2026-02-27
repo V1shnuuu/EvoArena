@@ -7,8 +7,10 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "test:coverage": "hardhat coverage",
+    "test:gas": "REPORT_GAS=true hardhat test",
     "deploy:local": "hardhat run scripts/deploy.ts",
     "deploy:testnet": "hardhat run scripts/deploy.ts --network bscTestnet",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network bscMainnet",
     "verify": "hardhat run scripts/verify.ts --network bscTestnet",
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "clean": "hardhat clean"

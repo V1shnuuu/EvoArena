@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -15,10 +17,15 @@ import "./interfaces/IEvoPool.sol";
  *         AgentController contract. Uses a constant-product baseline with
  *         curve-mode-dependent modifications to price impact and fees.
  *
+ *         LP shares are issued as a standard ERC-20 token (EvoPool LP).
+ *         Includes a Uniswap-V2-style TWAP price oracle and optional
+ *         protocol fee (routed to treasury).
+ *
  * @dev curveBeta is stored scaled by 1e4, so 10000 = 1.0, 2000 = 0.2, etc.
  *      feeBps is in basis points (1 bps = 0.01%).
+ *      TWAP uses UQ112x112 fixed-point price accumulators.
  */
-contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
+contract EvoPool is IEvoPool, ERC20, ERC20Permit, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // ── Tokens ──────────────────────────────────────────────────────────
@@ -29,10 +36,6 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
     uint256 public reserve0;
     uint256 public reserve1;
 
-    // ── LP accounting ───────────────────────────────────────────────────
-    uint256 public totalSupply;
-    mapping(address => uint256) public balanceOf;
-
     // ── Tunable parameters (set by AgentController) ─────────────────────
     uint256 public override feeBps;       // e.g. 30 = 0.30 %
     uint256 public override curveBeta;    // scaled 1e4; 10000 = 1.0
@@ -40,16 +43,33 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
 
     // ── Access ──────────────────────────────────────────────────────────
     address public controller; // AgentController address
+    address public epochManager; // EpochManager address (also authorized)
 
     // ── Trade tracking (for off-chain agent) ────────────────────────────
     uint256 public tradeCount;
     uint256 public cumulativeVolume0;
     uint256 public cumulativeVolume1;
 
+    // ── TWAP Oracle (Uniswap V2-style) ──────────────────────────────────
+    uint256 public override price0CumulativeLast;
+    uint256 public override price1CumulativeLast;
+    uint32  public override blockTimestampLast;
+
+    // ── Protocol Fee ────────────────────────────────────────────────────
+    uint256 public override protocolFeeBps; // bps of swap fee sent to treasury (0 = off)
+    address public treasury;
+    uint256 public protocolFeeAccum0;  // uncollected protocol fees token0
+    uint256 public protocolFeeAccum1;  // uncollected protocol fees token1
+
     // ── Constants ───────────────────────────────────────────────────────
     uint256 public constant MAX_FEE_BPS = 500;          // 5 %
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 2000; // 20% of swap fee max
     uint256 public constant BETA_SCALE  = 10_000;       // 1.0 = 10000
     uint256 private constant MINIMUM_LIQUIDITY = 1000;
+    uint256 private constant Q112 = 2**112;
+
+    // ── Rate limit ──────────────────────────────────────────────────────
+    uint256 public parameterUpdateBlock; // block when last parameter update takes effect
 
     // ── Errors ──────────────────────────────────────────────────────────
     error ZeroAmount();
@@ -59,9 +79,10 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
     error OnlyController();
     error FeeTooHigh();
     error InvalidCurveMode();
+    error ProtocolFeeTooHigh();
 
     modifier onlyController() {
-        if (msg.sender != controller) revert OnlyController();
+        if (msg.sender != controller && msg.sender != epochManager) revert OnlyController();
         _;
     }
 
@@ -71,7 +92,7 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         uint256 _initialFeeBps,
         uint256 _initialCurveBeta,
         address _owner
-    ) Ownable(_owner) {
+    ) ERC20("EvoPool LP", "EVO-LP") ERC20Permit("EvoPool LP") Ownable(_owner) {
         if (_token0 == _token1 || _token0 == address(0) || _token1 == address(0))
             revert InvalidTokens();
         if (_initialFeeBps > MAX_FEE_BPS) revert FeeTooHigh();
@@ -81,6 +102,7 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         feeBps = _initialFeeBps;
         curveBeta = _initialCurveBeta;
         curveMode = CurveMode.Normal;
+        treasury = _owner; // default treasury = deployer
     }
 
     // ── Admin ───────────────────────────────────────────────────────────
@@ -92,17 +114,81 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         controller = _controller;
     }
 
+    /**
+     * @notice Set the EpochManager address (authorized to update parameters).
+     */
+    function setEpochManager(address _epochManager) external onlyOwner {
+        epochManager = _epochManager;
+    }
+
+    /**
+     * @notice Set the protocol fee (fraction of swap fee routed to treasury).
+     * @param _protocolFeeBps Protocol fee in basis points of the swap fee (e.g. 500 = 5% of fee)
+     */
+    function setProtocolFee(uint256 _protocolFeeBps) external onlyOwner {
+        if (_protocolFeeBps > MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeTooHigh();
+        protocolFeeBps = _protocolFeeBps;
+    }
+
+    /**
+     * @notice Update treasury address for protocol fee collection.
+     * @param _treasury New treasury address
+     */
+    function setTreasury(address _treasury) external onlyOwner {
+        treasury = _treasury;
+    }
+
+    /**
+     * @notice Collect accumulated protocol fees to treasury.
+     */
+    function collectProtocolFees() external nonReentrant {
+        uint256 fee0 = protocolFeeAccum0;
+        uint256 fee1 = protocolFeeAccum1;
+        protocolFeeAccum0 = 0;
+        protocolFeeAccum1 = 0;
+
+        if (fee0 > 0) token0.safeTransfer(treasury, fee0);
+        if (fee1 > 0) token1.safeTransfer(treasury, fee1);
+
+        emit ProtocolFeeCollected(treasury, fee0, fee1);
+    }
+
     // ── Views ───────────────────────────────────────────────────────────
 
     function getReserves() external view override returns (uint256, uint256) {
         return (reserve0, reserve1);
     }
 
+    // ── TWAP Oracle ─────────────────────────────────────────────────────
+
+    /**
+     * @dev Update cumulative price accumulators. Called at the start of swap/addLiquidity.
+     */
+    function _updateTWAP() private {
+        uint32 blockTimestamp = uint32(block.timestamp % 2**32);
+        uint32 timeElapsed;
+        unchecked {
+            timeElapsed = blockTimestamp - blockTimestampLast;
+        }
+
+        if (timeElapsed > 0 && reserve0 > 0 && reserve1 > 0) {
+            // UQ112x112 price accumulators (overflow is desired for TWAP math)
+            unchecked {
+                price0CumulativeLast += (reserve1 * Q112 / reserve0) * timeElapsed;
+                price1CumulativeLast += (reserve0 * Q112 / reserve1) * timeElapsed;
+            }
+            blockTimestampLast = blockTimestamp;
+        }
+    }
+
     // ── Liquidity ───────────────────────────────────────────────────────
 
     /**
      * @notice Add liquidity in proportion to current reserves.
-     *         First deposit sets the ratio. Returns LP shares.
+     *         First deposit sets the ratio. Returns LP shares as ERC-20.
+     * @param amount0 Amount of token0 to deposit
+     * @param amount1 Amount of token1 to deposit
+     * @return liquidity LP tokens minted
      */
     function addLiquidity(
         uint256 amount0,
@@ -110,47 +196,58 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
     ) external override nonReentrant returns (uint256 liquidity) {
         if (amount0 == 0 || amount1 == 0) revert ZeroAmount();
 
+        _updateTWAP();
+
+        // Balance-diff accounting: measure actual tokens received
+        uint256 bal0Before = token0.balanceOf(address(this));
+        uint256 bal1Before = token1.balanceOf(address(this));
+
         token0.safeTransferFrom(msg.sender, address(this), amount0);
         token1.safeTransferFrom(msg.sender, address(this), amount1);
 
-        if (totalSupply == 0) {
-            liquidity = _sqrt(amount0 * amount1) - MINIMUM_LIQUIDITY;
+        uint256 actual0 = token0.balanceOf(address(this)) - bal0Before;
+        uint256 actual1 = token1.balanceOf(address(this)) - bal1Before;
+
+        if (totalSupply() == 0) {
+            liquidity = _sqrt(actual0 * actual1) - MINIMUM_LIQUIDITY;
             // Lock minimum liquidity to prevent manipulation
-            totalSupply = MINIMUM_LIQUIDITY;
-            balanceOf[address(0)] = MINIMUM_LIQUIDITY;
+            _mint(address(1), MINIMUM_LIQUIDITY); // burn address
         } else {
-            uint256 liq0 = (amount0 * totalSupply) / reserve0;
-            uint256 liq1 = (amount1 * totalSupply) / reserve1;
+            uint256 liq0 = (actual0 * totalSupply()) / reserve0;
+            uint256 liq1 = (actual1 * totalSupply()) / reserve1;
             liquidity = liq0 < liq1 ? liq0 : liq1;
         }
 
         if (liquidity == 0) revert InsufficientLiquidity();
 
-        balanceOf[msg.sender] += liquidity;
-        totalSupply += liquidity;
+        _mint(msg.sender, liquidity);
 
-        reserve0 += amount0;
-        reserve1 += amount1;
+        reserve0 += actual0;
+        reserve1 += actual1;
 
-        emit LiquidityAdded(msg.sender, amount0, amount1, liquidity);
+        emit LiquidityAdded(msg.sender, actual0, actual1, liquidity);
     }
 
     /**
      * @notice Remove liquidity by burning LP shares.
+     * @param liquidity Number of LP tokens to burn
+     * @return amount0 Token0 returned
+     * @return amount1 Token1 returned
      */
     function removeLiquidity(
         uint256 liquidity
     ) external override nonReentrant returns (uint256 amount0, uint256 amount1) {
         if (liquidity == 0) revert ZeroAmount();
-        if (balanceOf[msg.sender] < liquidity) revert InsufficientLiquidity();
+        if (balanceOf(msg.sender) < liquidity) revert InsufficientLiquidity();
 
-        amount0 = (liquidity * reserve0) / totalSupply;
-        amount1 = (liquidity * reserve1) / totalSupply;
+        _updateTWAP();
+
+        amount0 = (liquidity * reserve0) / totalSupply();
+        amount1 = (liquidity * reserve1) / totalSupply();
 
         if (amount0 == 0 || amount1 == 0) revert InsufficientLiquidity();
 
-        balanceOf[msg.sender] -= liquidity;
-        totalSupply -= liquidity;
+        _burn(msg.sender, liquidity);
 
         reserve0 -= amount0;
         reserve1 -= amount1;
@@ -168,6 +265,7 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
      * @param zeroForOne  true = sell token0 for token1, false = opposite
      * @param amountIn    amount of input token
      * @param minAmountOut  minimum acceptable output (slippage guard)
+     * @return amountOut Tokens received by the caller
      */
     function swap(
         bool zeroForOne,
@@ -177,52 +275,75 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         if (amountIn == 0) revert ZeroAmount();
         if (reserve0 == 0 || reserve1 == 0) revert InsufficientLiquidity();
 
+        _updateTWAP();
+
+        // Balance-diff accounting for fee-on-transfer tokens
+        IERC20 tokenIn = zeroForOne ? token0 : token1;
+        uint256 balBefore = tokenIn.balanceOf(address(this));
+        tokenIn.safeTransferFrom(msg.sender, address(this), amountIn);
+        uint256 actualIn = tokenIn.balanceOf(address(this)) - balBefore;
+
         // Apply curve-mode adjustments to effective input
-        uint256 effectiveIn = _applyCurve(amountIn, zeroForOne);
+        uint256 effectiveIn = _applyCurve(actualIn, zeroForOne);
 
         // Deduct fee
         uint256 feeAmount = (effectiveIn * feeBps) / 10_000;
         uint256 amountInAfterFee = effectiveIn - feeAmount;
 
+        // Protocol fee: fraction of the swap fee goes to treasury
+        uint256 protocolFee = 0;
+        if (protocolFeeBps > 0 && feeAmount > 0) {
+            protocolFee = (feeAmount * protocolFeeBps) / 10_000;
+        }
+
         // Constant-product math
         uint256 reserveIn  = zeroForOne ? reserve0 : reserve1;
         uint256 reserveOut = zeroForOne ? reserve1 : reserve0;
 
-        // dy = reserveOut - (reserveIn * reserveOut) / (reserveIn + dx)
         amountOut = (reserveOut * amountInAfterFee) / (reserveIn + amountInAfterFee);
 
         if (amountOut < minAmountOut) revert InsufficientOutput();
 
-        // Transfer tokens
+        // Update reserves
         if (zeroForOne) {
-            token0.safeTransferFrom(msg.sender, address(this), amountIn);
-            token1.safeTransfer(msg.sender, amountOut);
-            reserve0 += amountIn;
+            reserve0 += actualIn;
             reserve1 -= amountOut;
+            if (protocolFee > 0) {
+                protocolFeeAccum0 += protocolFee;
+                reserve0 -= protocolFee; // protocol fee is not part of k
+            }
         } else {
-            token1.safeTransferFrom(msg.sender, address(this), amountIn);
-            token0.safeTransfer(msg.sender, amountOut);
-            reserve1 += amountIn;
+            reserve1 += actualIn;
             reserve0 -= amountOut;
+            if (protocolFee > 0) {
+                protocolFeeAccum1 += protocolFee;
+                reserve1 -= protocolFee;
+            }
         }
+
+        // Transfer output tokens
+        (zeroForOne ? token1 : token0).safeTransfer(msg.sender, amountOut);
 
         // Track stats
         tradeCount++;
         if (zeroForOne) {
-            cumulativeVolume0 += amountIn;
+            cumulativeVolume0 += actualIn;
         } else {
-            cumulativeVolume1 += amountIn;
+            cumulativeVolume1 += actualIn;
         }
 
-        emit Swap(msg.sender, zeroForOne, amountIn, amountOut, feeAmount);
+        emit Swap(msg.sender, zeroForOne, actualIn, amountOut, feeAmount);
     }
 
     // ── Parameter updates (called by AgentController) ───────────────────
 
     /**
      * @notice Update pool parameters. Only callable by the AgentController.
-     * @dev Bounds are enforced in AgentController; pool does a final cap check.
-     * @param _agent The address of the agent that proposed this update.
+     *         Parameters take effect immediately but are recorded for MEV-awareness.
+     * @param _feeBps New fee in basis points
+     * @param _curveBeta New curve beta (scaled 1e4)
+     * @param _curveMode New curve mode (0, 1, or 2)
+     * @param _agent The address of the agent that proposed this update
      */
     function updateParameters(
         uint256 _feeBps,
@@ -236,6 +357,7 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         feeBps    = _feeBps;
         curveBeta = _curveBeta;
         curveMode = _curveMode;
+        parameterUpdateBlock = block.number;
 
         emit ParametersUpdated(_feeBps, _curveBeta, _curveMode, _agent);
     }
@@ -265,16 +387,11 @@ contract EvoPool is IEvoPool, ReentrancyGuard, Ownable {
         uint256 reserveIn = zeroForOne ? reserve0 : reserve1;
 
         if (curveMode == CurveMode.Defensive) {
-            // W = amountIn / reserveIn  (scaled 1e18 for precision)
-            // penalty = beta * W^2  (beta is scaled 1e4)
-            // effectiveIn = amountIn * (1 + penalty / 1e4)
-            uint256 w = (amountIn * 1e18) / reserveIn;        // W scaled 1e18
-            uint256 wSquared = (w * w) / 1e18;                 // W² scaled 1e18
-            uint256 penalty = (curveBeta * wSquared) / 1e18;   // scaled 1e4
+            uint256 w = (amountIn * 1e18) / reserveIn;
+            uint256 wSquared = (w * w) / 1e18;
+            uint256 penalty = (curveBeta * wSquared) / 1e18;
             effectiveIn = amountIn + (amountIn * penalty) / BETA_SCALE;
         } else {
-            // VolatilityAdaptive: linear penalty
-            // effectiveIn = amountIn * (1 + beta * amountIn / reserveIn / BETA_SCALE)
             uint256 ratio = (amountIn * BETA_SCALE) / reserveIn;
             uint256 penalty = (curveBeta * ratio) / (BETA_SCALE * BETA_SCALE);
             effectiveIn = amountIn + (amountIn * penalty) / BETA_SCALE;

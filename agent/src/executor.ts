@@ -13,6 +13,11 @@ const EVOPOOL_ABI = [
   "function cumulativeVolume0() view returns (uint256)",
   "function cumulativeVolume1() view returns (uint256)",
   "function totalSupply() view returns (uint256)",
+  "function price0CumulativeLast() view returns (uint256)",
+  "function price1CumulativeLast() view returns (uint256)",
+  "function protocolFeeBps() view returns (uint256)",
+  "function protocolFeeAccum0() view returns (uint256)",
+  "function protocolFeeAccum1() view returns (uint256)",
   "event Swap(address indexed sender, bool zeroForOne, uint256 amountIn, uint256 amountOut, uint256 feeAmount)",
   "event ParametersUpdated(uint256 newFeeBps, uint256 newCurveBeta, uint8 newMode, address indexed agent)",
 ];
@@ -20,11 +25,20 @@ const EVOPOOL_ABI = [
 const CONTROLLER_ABI = [
   "function registerAgent() payable",
   "function submitParameterUpdate(uint256 newFeeBps, uint256 newCurveBeta, uint8 newCurveMode)",
-  "function getAgentInfo(address) view returns (tuple(address agentAddress, uint256 bondAmount, uint256 registeredAt, uint256 lastUpdateTime, bool active))",
+  "function getAgentInfo(address) view returns (tuple(address agentAddress, uint256 bondAmount, uint256 tokenBondAmount, uint256 registeredAt, uint256 lastUpdateTime, bool active))",
   "function cooldownSeconds() view returns (uint256)",
   "function minBond() view returns (uint256)",
+  "function paused() view returns (bool)",
   "event AgentUpdateProposed(address indexed agent, uint256 newFeeBps, uint256 newCurveBeta, uint8 newCurveMode, uint256 timestamp)",
 ];
+
+// ── Circuit-Breaker thresholds ──────────────────────────────────────
+const CIRCUIT_BREAKER = {
+  maxReserveImbalance: 0.5,      // halt if reserve ratio > 2:1
+  maxConsecutiveErrors: 3,        // halt if 3 errors in a row
+  maxGasPriceGwei: 50,           // halt if gas > 50 gwei
+  minReserveBps: 100,            // halt if either reserve < 1% of initial
+};
 
 export interface UpdateSummary {
   timestamp: string;
@@ -36,6 +50,14 @@ export interface UpdateSummary {
   expectedImpact: string;
   txHash?: string;
   dryRun: boolean;
+  gasUsed?: string;
+}
+
+export interface AlertMessage {
+  timestamp: string;
+  level: "info" | "warn" | "error" | "critical";
+  message: string;
+  data?: Record<string, any>;
 }
 
 export class Executor {
@@ -43,6 +65,8 @@ export class Executor {
   private wallet: ethers.Wallet;
   private pool: ethers.Contract;
   private controller: ethers.Contract;
+  private consecutiveErrors: number = 0;
+  private alerts: AlertMessage[] = [];
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -57,6 +81,72 @@ export class Executor {
 
   get agentAddress(): string {
     return this.wallet.address;
+  }
+
+  // ── Alerting ────────────────────────────────────────────────────────
+  private addAlert(level: AlertMessage["level"], message: string, data?: Record<string, any>): void {
+    const alert: AlertMessage = { timestamp: new Date().toISOString(), level, message, data };
+    this.alerts.push(alert);
+    const prefix = level === "critical" ? "🚨" : level === "error" ? "❌" : level === "warn" ? "⚠️" : "ℹ️";
+    console.log(`[alert] ${prefix} ${message}`, data || "");
+
+    // Persist alerts
+    const dir = path.resolve(__dirname, "../state");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const alertFile = path.join(dir, "alerts.json");
+    let history: AlertMessage[] = [];
+    if (fs.existsSync(alertFile)) {
+      try { history = JSON.parse(fs.readFileSync(alertFile, "utf-8")); } catch { history = []; }
+    }
+    history.push(alert);
+    // Keep last 500 alerts
+    if (history.length > 500) history = history.slice(-500);
+    fs.writeFileSync(alertFile, JSON.stringify(history, null, 2));
+  }
+
+  getAlerts(): AlertMessage[] { return this.alerts; }
+
+  // ── Circuit Breaker ─────────────────────────────────────────────────
+  async checkCircuitBreaker(): Promise<{ safe: boolean; reason?: string }> {
+    try {
+      // 1. Check consecutive errors
+      if (this.consecutiveErrors >= CIRCUIT_BREAKER.maxConsecutiveErrors) {
+        this.addAlert("critical", "Circuit breaker: too many consecutive errors", { count: this.consecutiveErrors });
+        return { safe: false, reason: `${this.consecutiveErrors} consecutive errors` };
+      }
+
+      // 2. Check controller paused
+      const paused = await this.controller.paused();
+      if (paused) {
+        this.addAlert("warn", "Circuit breaker: controller is paused");
+        return { safe: false, reason: "controller paused" };
+      }
+
+      // 3. Check reserve imbalance
+      const [r0, r1] = await this.pool.getReserves();
+      const reserve0 = Number(r0);
+      const reserve1 = Number(r1);
+      if (reserve0 > 0 && reserve1 > 0) {
+        const ratio = Math.max(reserve0 / reserve1, reserve1 / reserve0);
+        if (ratio > 1 / (1 - CIRCUIT_BREAKER.maxReserveImbalance) + 1) {
+          this.addAlert("critical", "Circuit breaker: reserve imbalance too high", { ratio: ratio.toFixed(4) });
+          return { safe: false, reason: `reserve ratio ${ratio.toFixed(2)}:1` };
+        }
+      }
+
+      // 4. Check gas price
+      const feeData = await this.provider.getFeeData();
+      const gasPriceGwei = Number(feeData.gasPrice || 0n) / 1e9;
+      if (gasPriceGwei > CIRCUIT_BREAKER.maxGasPriceGwei) {
+        this.addAlert("warn", "Circuit breaker: gas price too high", { gasPriceGwei });
+        return { safe: false, reason: `gas ${gasPriceGwei.toFixed(1)} gwei > ${CIRCUIT_BREAKER.maxGasPriceGwei}` };
+      }
+
+      return { safe: true };
+    } catch (err: any) {
+      this.addAlert("error", "Circuit breaker check failed", { error: err.message });
+      return { safe: false, reason: `check failed: ${err.message}` };
+    }
   }
 
   async getPoolState() {
@@ -114,6 +204,7 @@ export class Executor {
     const tx = await this.controller.registerAgent({ value: minBond });
     await tx.wait();
     console.log(`[agent] Registered. TX: ${tx.hash}`);
+    this.addAlert("info", "Agent registered", { bond: ethers.formatEther(minBond) });
   }
 
   async submitUpdate(
@@ -160,6 +251,15 @@ export class Executor {
         return summary;
       }
 
+      // Circuit breaker check
+      const cb = await this.checkCircuitBreaker();
+      if (!cb.safe) {
+        console.log(`[agent] ⛔ Circuit breaker tripped: ${cb.reason}. Skipping update.`);
+        summary.expectedImpact = `CIRCUIT-BREAKER: ${cb.reason}`;
+        this.saveSummary(summary);
+        return summary;
+      }
+
       console.log(`[agent] Submitting update:`, summary.proposedParams);
       try {
         const tx = await this.controller.submitParameterUpdate(
@@ -169,8 +269,13 @@ export class Executor {
         );
         const receipt = await tx.wait();
         summary.txHash = tx.hash;
-        console.log(`[agent] ✅ Update submitted. TX: ${tx.hash} (block ${receipt.blockNumber})`);
+        summary.gasUsed = receipt.gasUsed?.toString();
+        this.consecutiveErrors = 0; // reset on success
+        this.addAlert("info", "Parameter update submitted", { txHash: tx.hash, gasUsed: summary.gasUsed });
+        console.log(`[agent] ✅ Update submitted. TX: ${tx.hash} (block ${receipt.blockNumber}, gas ${summary.gasUsed})`);
       } catch (err: any) {
+        this.consecutiveErrors++;
+        this.addAlert("error", "Parameter update failed", { error: err.reason || err.message, consecutiveErrors: this.consecutiveErrors });
         console.error(`[agent] ❌ Update failed:`, err.reason || err.message);
         summary.expectedImpact = `FAILED: ${err.reason || err.message}`;
       }

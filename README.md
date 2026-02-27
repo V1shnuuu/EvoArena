@@ -5,41 +5,136 @@
 ## 🏗 Architecture
 
 ```
-┌────────────────────────────┐
-│        Frontend UI         │  Next.js dashboard
-└─────────────▲──────────────┘
-              │
-┌─────────────┴──────────────┐
-│      Off-Chain Agent       │  Node.js strategy engine
-│  (Volatility · Whale · Fee)│
-└─────────────▲──────────────┘
-              │  signed tx
-┌─────────────┴──────────────┐
-│    AgentController.sol     │  Bounds · Cooldown · Slash
-└─────────────▲──────────────┘
-              │
-┌─────────────┴──────────────┐
-│     EvoPool.sol (AMM)      │  Dynamic curve · Fee · Mode
-└────────────────────────────┘
+┌────────────────────────────────────────────┐
+│             Frontend UI (Next.js 14)       │
+│  Pool · Agents · Swap · Liquidity · History│
+│  Settings · Demo                           │
+└──────────────────▲─────────────────────────┘
+                   │
+┌──────────────────┴─────────────────────────┐
+│          Off-Chain Agent (Node.js)          │
+│  ML Strategy · Circuit Breaker · Backtester│
+│  Multi-Pool · Volatility · APS Calculator  │
+└──────────────────▲─────────────────────────┘
+                   │ signed tx
+┌──────────────────┴─────────────────────────┐
+│        AgentController.sol                 │
+│  Bounds · Cooldown · Slash · ERC-20 Bond   │
+└──────────────────▲─────────────────────────┘
+                   │
+┌──────────────────┴─────────────────────────┐
+│  EpochManager.sol  │    TimeLock.sol       │
+│  Competition · Rewards · Scoring           │
+└──────────────────▲─────────────────────────┘
+                   │
+┌──────────────────┴─────────────────────────┐
+│           EvoPool.sol (AMM)                │
+│  ERC-20 LP · TWAP Oracle · Protocol Fee   │
+│  3 Curve Modes · Balance-Diff Accounting   │
+│  EIP-2612 Permit                           │
+└────────────────────────────────────────────┘
 ```
 
 ## 📦 Repository Structure
 
 ```
-contracts/          Solidity smart contracts (Hardhat)
-  EvoPool.sol       Adaptive AMM with 3 curve modes
-  AgentController.sol  Agent registry, bounds, cooldown, slashing
-  EvoToken.sol      Minimal ERC-20 for protocol coordination
-  interfaces/       Contract interfaces
-scripts/            Deploy & verification scripts
-test/               Contract unit tests (Mocha + Chai)
-agent/              Off-chain Node.js agent
-  src/              Strategy engine, volatility, APS calculator
-  state/            APS snapshots & update logs
-  updates/          JSON summaries per parameter update
-frontend/           Next.js dashboard
-docs/               Architecture, demo script, agent spec
+contracts/                Solidity smart contracts (Hardhat)
+  EvoPool.sol             Adaptive AMM with ERC-20 LP, TWAP, protocol fees, EIP-2612 Permit
+  AgentController.sol     Agent registry, bounds, cooldown, slashing, ERC-20 token bonding
+  EpochManager.sol        On-chain epoch-based multi-agent competition
+  TimeLock.sol            Governance timelock (queue/execute/cancel)
+  EvoToken.sol            Minimal ERC-20 for protocol coordination
+  interfaces/             Contract interfaces (IEvoPool, IAgentController, IEpochManager)
+
+test/                     Contract tests (Mocha + Chai, 123 passing)
+  AgentController.test.ts 45 tests — registration, updates, slashing, bonding
+  EvoPool.test.ts         33 tests — liquidity, swaps, TWAP, protocol fees
+  EpochManager.test.ts    23 tests — epochs, proposals, finalization, rewards
+  TimeLock.test.ts        9 tests — queue, execute, cancel, access control
+  E2E.test.ts             13 tests — full lifecycle integration test
+
+scripts/                  Deploy & verification scripts
+  deploy.ts               Full deployment (tokens, pool, controller, epoch, timelock)
+
+agent/                    Off-chain Node.js agent
+  src/
+    index.ts              Main loop — multi-pool, ML integration, circuit breaker
+    executor.ts           On-chain execution with multicall batching
+    strategyEngine.ts     Rule-based strategy engine (3 curve modes)
+    mlStrategy.ts         Online linear regression ML model
+    backtester.ts         Historical backtesting framework
+    circuitBreaker.ts     Anomaly detection & auto-halt
+    volatility.ts         EMA-based volatility calculator
+    apsCalculator.ts      Agent Performance Score computation
+    config.ts             Environment configuration
+  state/                  APS snapshots & update logs
+
+frontend/                 Next.js 14 dashboard (App Router + Tailwind)
+  src/app/
+    page.tsx              Pool overview with live charts
+    agents/page.tsx       Agent leaderboard
+    swap/page.tsx         Token swap UI
+    liquidity/page.tsx    Add/remove liquidity UI
+    history/page.tsx      Transaction history (Swaps, Liquidity, Parameters)
+    settings/page.tsx     Agent strategy configuration UI
+    demo/page.tsx         Interactive demo
+    api/agent-stats/      REST API for agent stats
+    api/aps/              APS scoring endpoint
+  src/hooks/
+    useEvoPool.ts         Pool state hook
+    useWallet.tsx         Multi-wallet context (MetaMask + WalletConnect)
+    usePolling.ts         Generic real-time polling hook
+  src/lib/
+    contracts.ts          ABIs, addresses, constants
+    wallet.ts             Multi-wallet connection (MetaMask, WalletConnect, injected)
+  src/components/
+    Charts.tsx            Recharts visualizations
+    WalletButton.tsx      Connect wallet button
+
+subgraph/                 The Graph subgraph scaffold
+  subgraph.yaml           Data source configuration (EvoPool, Controller, EpochManager)
+  schema.graphql          Entity schema (Swap, Agent, Epoch, Proposal, etc.)
+  src/mapping.ts          Event handlers
+
+docs/                     Architecture, demo script, agent spec
+.github/workflows/ci.yml  4-job CI pipeline (test, coverage, agent, frontend)
 ```
+
+## ✨ Features
+
+### Smart Contracts
+- **EvoPool**: Adaptive AMM with 3 curve modes (Normal, Defensive, VolatilityAdaptive)
+- **ERC-20 LP Tokens**: Full ERC-20 composability with EIP-2612 Permit support
+- **TWAP Oracle**: Uniswap-V2-style time-weighted average price accumulators
+- **Protocol Fee Switch**: Configurable protocol fee (up to 20% of swap fee)
+- **Balance-Diff Accounting**: Safe token accounting via balance snapshots
+- **EpochManager**: On-chain multi-agent competition with scoring and rewards
+- **TimeLock**: Governance timelock for admin operations (24h–7d delay)
+- **ERC-20 Token Bonding**: Agents can stake ERC-20 tokens in addition to native bonds
+- **Formal Slashing Criteria**: 3 enumerated conditions for agent slashing
+- **Rate Limiting**: `parameterUpdateBlock` tracking prevents flash-loan attacks
+
+### Off-Chain Agent
+- **ML Strategy Engine**: Online linear regression with confidence-weighted predictions
+- **Historical Backtesting**: Replay-based backtesting framework with strategy comparison
+- **Circuit Breaker**: Anomaly detection (reserve drain, price crash, rapid updates)
+- **Multi-Pool Support**: Single agent instance manages multiple pools
+- **Gas Optimization**: Multicall batching for on-chain execution
+
+### Frontend
+- **7 Pages**: Pool, Agents, Swap, Liquidity, History, Settings, Demo
+- **Multi-Wallet**: MetaMask + WalletConnect support
+- **Real-Time Polling**: Auto-refresh pool and agent data
+- **Agent Settings UI**: Submit parameter updates directly from the browser
+- **Transaction History**: Browse swaps, liquidity events, and parameter updates
+- **Mobile-Responsive**: Hamburger navigation for mobile devices
+- **Agent Stats API**: REST endpoint at `/api/agent-stats?address=0x...`
+
+### DevOps
+- **4-Job CI Pipeline**: test, coverage threshold, agent build, frontend build
+- **Gas Snapshot**: Automated gas reporting as CI artifact
+- **BSC Testnet + Mainnet**: Dual-network Hardhat configuration
+- **Subgraph Scaffold**: Ready for The Graph deployment
 
 ## 🚀 Quick Start
 
@@ -66,7 +161,9 @@ npx hardhat compile
 
 ### 4. Run tests
 ```bash
-npx hardhat test
+npx hardhat test          # 123 tests
+npx hardhat coverage      # Coverage report
+npm run test:gas          # Gas usage report
 ```
 
 ### 5. Deploy to BSC Testnet
@@ -74,9 +171,12 @@ npx hardhat test
 npx hardhat run scripts/deploy.ts --network bscTestnet
 ```
 
-### 6. Run the agent (single epoch)
+### 6. Run the agent
 ```bash
-cd agent && npm install && npm run once
+cd agent && npm install
+npm run once              # Single epoch
+npm start                 # Continuous loop
+npm run backtest          # Historical backtesting
 ```
 
 ### 7. Start frontend
@@ -113,7 +213,19 @@ APS = 0.4·LPΔ + 0.3·SlippageReduction + 0.2·VolatilityCompression + 0.1·Fee
 | Cooldown between updates | 5 minutes | ✅ |
 | Minimum agent bond | 0.01 tBNB | ✅ |
 | Max fee cap | 500 bps (5%) | ✅ |
+| Protocol fee cap | 2000 bps (20%) | ✅ |
+| Governance timelock | 24h minimum | ✅ |
 | Emergency pause | Owner only | ✅ |
+| Formal slashing criteria | 3 conditions | ✅ |
+
+### Slashing Conditions
+1. **Excessive Deviation**: Parameters deviate >200bps from optimal in a single update
+2. **Rapid Oscillation**: >5 updates within 10 minutes suggesting manipulation
+3. **Manipulation Detected**: Evidence of coordinated front-running or sandwich attacks
+
+## 🔗 Contract Addresses
+
+After deployment, addresses are saved to `deployment.json`. Update your `.env` file with the NEXT_PUBLIC_ variants for the frontend.
 
 ## 🔗 References
 

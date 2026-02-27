@@ -1,0 +1,92 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: EvoPool
+    network: chapel
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: EvoPool
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Swap
+        - LiquidityEvent
+        - ParameterUpdate
+        - ProtocolFeeCollection
+      abis:
+        - name: EvoPool
+          file: ../artifacts/contracts/EvoPool.sol/EvoPool.json
+      eventHandlers:
+        - event: Swap(indexed address,bool,uint256,uint256,uint256)
+          handler: handleSwap
+        - event: LiquidityAdded(indexed address,uint256,uint256,uint256)
+          handler: handleLiquidityAdded
+        - event: LiquidityRemoved(indexed address,uint256,uint256,uint256)
+          handler: handleLiquidityRemoved
+        - event: ParametersUpdated(uint256,uint256,uint8,indexed address)
+          handler: handleParametersUpdated
+        - event: ProtocolFeeCollected(uint256,uint256,indexed address)
+          handler: handleProtocolFeeCollected
+      file: ./src/mapping.ts
+
+  - kind: ethereum
+    name: AgentController
+    network: chapel
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: AgentController
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - SlashEvent
+      abis:
+        - name: AgentController
+          file: ../artifacts/contracts/AgentController.sol/AgentController.json
+      eventHandlers:
+        - event: AgentRegistered(indexed address,uint256)
+          handler: handleAgentRegistered
+        - event: AgentDeregistered(indexed address,uint256)
+          handler: handleAgentDeregistered
+        - event: AgentSlashed(indexed address,uint256,string)
+          handler: handleAgentSlashed
+        - event: AgentUpdateProposed(indexed address,uint256,uint256,uint8,uint256)
+          handler: handleAgentUpdateProposed
+      file: ./src/mapping.ts
+
+  - kind: ethereum
+    name: EpochManager
+    network: chapel
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: EpochManager
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Epoch
+        - Proposal
+        - RewardClaim
+      abis:
+        - name: EpochManager
+          file: ../artifacts/contracts/EpochManager.sol/EpochManager.json
+      eventHandlers:
+        - event: EpochStarted(indexed uint256,uint256,uint256)
+          handler: handleEpochStarted
+        - event: ProposalSubmitted(indexed uint256,indexed address,uint256,uint256,uint8)
+          handler: handleProposalSubmitted
+        - event: EpochFinalized(indexed uint256,indexed address,uint256)
+          handler: handleEpochFinalized
+        - event: RewardClaimed(indexed uint256,indexed address,uint256)
+          handler: handleRewardClaimed
+      file: ./src/mapping.ts

@@ -25,7 +25,26 @@ jobs:
         run: npx hardhat test
 
       - name: Run coverage
-        run: npx hardhat coverage || true
+        run: npx hardhat coverage
+
+      - name: Check coverage threshold (80%)
+        run: |
+          COVERAGE=$(cat coverage/coverage-summary.json 2>/dev/null | node -e "
+            const data = require('fs').readFileSync('/dev/stdin','utf-8');
+            const json = JSON.parse(data);
+            const total = json.total;
+            const avg = (total.lines.pct + total.branches.pct + total.functions.pct + total.statements.pct) / 4;
+            console.log(avg.toFixed(2));
+          " 2>/dev/null || echo "0")
+          echo "Coverage: ${COVERAGE}%"
+          if [ "$(echo "$COVERAGE < 80" | bc -l 2>/dev/null || echo "0")" = "1" ]; then
+            echo "⚠️ Coverage below 80% threshold"
+          fi
+
+      - name: Gas report
+        run: REPORT_GAS=true npx hardhat test --no-compile
+        env:
+          REPORT_GAS: "true"
 
       - name: Lint Solidity
         run: npx solhint 'contracts/**/*.sol'

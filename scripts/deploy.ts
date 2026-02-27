@@ -64,18 +64,60 @@ async function main() {
   const controllerAddr = await controller.getAddress();
   console.log("AgentController deployed:", controllerAddr);
 
-  // ── 4. Link controller to pool ────────────────────────────────────
+  // ── 4. Deploy EpochManager ────────────────────────────────────────
+  const EPOCH_DURATION = 3600; // 1 hour epochs
+  const EPOCH_REWARD = ethers.parseEther("0.1"); // 0.1 BNB per epoch
+
+  const EpochManagerFactory = await ethers.getContractFactory("EpochManager");
+  const epochManager = await EpochManagerFactory.deploy(
+    poolAddr,
+    controllerAddr,
+    EPOCH_DURATION,
+    deployer.address, // scorer
+    deployer.address  // owner
+  );
+  await epochManager.waitForDeployment();
+  const epochManagerAddr = await epochManager.getAddress();
+  console.log("EpochManager deployed:", epochManagerAddr);
+
+  // Set epoch reward
+  await epochManager.setEpochReward(EPOCH_REWARD);
+  console.log("Epoch reward set:", ethers.formatEther(EPOCH_REWARD), "BNB");
+
+  // ── 5. Deploy TimeLock ────────────────────────────────────────────
+  const TIMELOCK_DELAY = 86400; // 24 hours
+
+  const TimeLockFactory = await ethers.getContractFactory("TimeLock");
+  const timeLock = await TimeLockFactory.deploy(TIMELOCK_DELAY, deployer.address);
+  await timeLock.waitForDeployment();
+  const timeLockAddr = await timeLock.getAddress();
+  console.log("TimeLock deployed:", timeLockAddr);
+
+  // ── 6. Link controller to pool ────────────────────────────────────
   await pool.setController(controllerAddr);
   console.log("Controller linked to pool");
 
-  // ── 5. Seed initial liquidity ─────────────────────────────────────
+  // ── 6b. Link epoch manager to pool ────────────────────────────────
+  await pool.setEpochManager(epochManagerAddr);
+  console.log("EpochManager linked to pool");
+
+  // ── 7. Set protocol fee treasury ──────────────────────────────────
+  await pool.setTreasury(deployer.address);
+  console.log("Treasury set to deployer");
+
+  // ── 8. Seed initial liquidity ─────────────────────────────────────
   const SEED_AMOUNT = ethers.parseEther("10000");
   await tokenA.approve(poolAddr, SEED_AMOUNT);
   await tokenB.approve(poolAddr, SEED_AMOUNT);
   await pool.addLiquidity(SEED_AMOUNT, SEED_AMOUNT);
   console.log("Seeded liquidity: 10,000 EVOA + 10,000 EVOB");
 
-  // ── 6. Save deployment addresses ──────────────────────────────────
+  // ── 9. Fund EpochManager for rewards ──────────────────────────────
+  const rewardFunding = ethers.parseEther("1"); // Fund 10 epochs
+  await deployer.sendTransaction({ to: epochManagerAddr, value: rewardFunding });
+  console.log("EpochManager funded with 1 BNB for rewards");
+
+  // ── 10. Save deployment addresses ─────────────────────────────────
   const deployment = {
     network: (await ethers.provider.getNetwork()).name,
     chainId: Number((await ethers.provider.getNetwork()).chainId),
@@ -84,6 +126,8 @@ async function main() {
     tokenB: tokenBAddr,
     evoPool: poolAddr,
     agentController: controllerAddr,
+    epochManager: epochManagerAddr,
+    timeLock: timeLockAddr,
     config: {
       initialFeeBps: INITIAL_FEE_BPS,
       initialCurveBeta: INITIAL_CURVE_BETA,
@@ -92,6 +136,9 @@ async function main() {
       maxFeeDelta: MAX_FEE_DELTA,
       maxBetaDelta: MAX_BETA_DELTA,
       seedLiquidity: ethers.formatEther(SEED_AMOUNT),
+      epochDuration: EPOCH_DURATION,
+      epochReward: ethers.formatEther(EPOCH_REWARD),
+      timelockDelay: TIMELOCK_DELAY,
     },
     timestamp: new Date().toISOString(),
   };

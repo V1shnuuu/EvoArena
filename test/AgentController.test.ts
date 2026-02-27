@@ -360,4 +360,109 @@ describe("AgentController", function () {
       expect(await controller.updateCount(agent1.address)).to.equal(2);
     });
   });
+
+  describe("ERC-20 Token Bonding", function () {
+    let bondTokenERC20: any;
+
+    beforeEach(async function () {
+      // Deploy a bond token
+      const TokenFactory = await ethers.getContractFactory("EvoToken");
+      bondTokenERC20 = await TokenFactory.deploy("Bond Token", "BND", INITIAL_SUPPLY, owner.address);
+
+      // Set bond token on controller
+      await controller.setBondToken(await bondTokenERC20.getAddress());
+
+      // Give agent1 some bond tokens
+      await bondTokenERC20.transfer(agent1.address, ethers.parseEther("1000"));
+      await bondTokenERC20.connect(agent1).approve(await controller.getAddress(), ethers.MaxUint256);
+
+      // Register agent
+      await controller.connect(agent1).registerAgent({ value: MIN_BOND });
+    });
+
+    it("should allow token bond deposit", async function () {
+      const amount = ethers.parseEther("100");
+      await controller.connect(agent1).depositTokenBond(amount);
+
+      const info = await controller.getAgentInfo(agent1.address);
+      expect(info.tokenBondAmount).to.equal(amount);
+    });
+
+    it("should emit TokenBondDeposited event", async function () {
+      const amount = ethers.parseEther("50");
+      await expect(controller.connect(agent1).depositTokenBond(amount))
+        .to.emit(controller, "TokenBondDeposited")
+        .withArgs(agent1.address, amount, amount);
+    });
+
+    it("should accumulate multiple token bond deposits", async function () {
+      await controller.connect(agent1).depositTokenBond(ethers.parseEther("50"));
+      await controller.connect(agent1).depositTokenBond(ethers.parseEther("30"));
+
+      const info = await controller.getAgentInfo(agent1.address);
+      expect(info.tokenBondAmount).to.equal(ethers.parseEther("80"));
+    });
+
+    it("should reject zero token bond deposit", async function () {
+      await expect(
+        controller.connect(agent1).depositTokenBond(0)
+      ).to.be.revertedWithCustomError(controller, "ZeroAmount");
+    });
+
+    it("should reject token bond deposit from unregistered agent", async function () {
+      await bondTokenERC20.transfer(outsider.address, ethers.parseEther("100"));
+      await bondTokenERC20.connect(outsider).approve(await controller.getAddress(), ethers.MaxUint256);
+
+      await expect(
+        controller.connect(outsider).depositTokenBond(ethers.parseEther("10"))
+      ).to.be.revertedWithCustomError(controller, "NotRegistered");
+    });
+
+    it("should reject token withdrawal while active", async function () {
+      await controller.connect(agent1).depositTokenBond(ethers.parseEther("100"));
+
+      await expect(
+        controller.connect(agent1).withdrawTokenBond()
+      ).to.be.revertedWithCustomError(controller, "StillActive");
+    });
+
+    it("should allow token withdrawal after deregistration", async function () {
+      const amount = ethers.parseEther("100");
+      await controller.connect(agent1).depositTokenBond(amount);
+
+      // Deregister (returns BNB bond)
+      await controller.connect(agent1).deregisterAgent();
+
+      const balBefore = await bondTokenERC20.balanceOf(agent1.address);
+      await controller.connect(agent1).withdrawTokenBond();
+      const balAfter = await bondTokenERC20.balanceOf(agent1.address);
+
+      expect(balAfter - balBefore).to.equal(amount);
+
+      const info = await controller.getAgentInfo(agent1.address);
+      expect(info.tokenBondAmount).to.equal(0);
+    });
+
+    it("should reject withdrawal with zero token bond", async function () {
+      await controller.connect(agent1).deregisterAgent();
+
+      await expect(
+        controller.connect(agent1).withdrawTokenBond()
+      ).to.be.revertedWithCustomError(controller, "ZeroAmount");
+    });
+
+    it("should allow owner to set bond token", async function () {
+      const TokenFactory = await ethers.getContractFactory("EvoToken");
+      const newToken = await TokenFactory.deploy("New Bond", "NBT", INITIAL_SUPPLY, owner.address);
+
+      await controller.setBondToken(await newToken.getAddress());
+      expect(await controller.bondToken()).to.equal(await newToken.getAddress());
+    });
+
+    it("should reject setBondToken from non-owner", async function () {
+      await expect(
+        controller.connect(outsider).setBondToken(ethers.ZeroAddress)
+      ).to.be.revertedWithCustomError(controller, "OwnableUnauthorizedAccount");
+    });
+  });
 });

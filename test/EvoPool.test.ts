@@ -58,6 +58,11 @@ describe("EvoPool", function () {
       expect(await pool.controller()).to.equal(controller.address);
     });
 
+    it("should have correct ERC-20 LP token name and symbol", async function () {
+      expect(await pool.name()).to.equal("EvoPool LP");
+      expect(await pool.symbol()).to.equal("EVO-LP");
+    });
+
     it("should reject same tokens", async function () {
       const PoolFactory = await ethers.getContractFactory("EvoPool");
       const addr = await tokenA.getAddress();
@@ -112,6 +117,21 @@ describe("EvoPool", function () {
         ethers.parseEther("1") // tolerance for minimum liquidity lock
       );
     });
+
+    it("should allow LP token transfer (ERC-20 composability)", async function () {
+      const amount = ethers.parseEther("1000");
+      await pool.connect(lp).addLiquidity(amount, amount);
+
+      const lpBalance = await pool.balanceOf(lp.address);
+      expect(lpBalance).to.be.gt(0);
+
+      // Transfer half to trader
+      const half = lpBalance / 2n;
+      await pool.connect(lp).transfer(trader.address, half);
+
+      expect(await pool.balanceOf(trader.address)).to.equal(half);
+      expect(await pool.balanceOf(lp.address)).to.equal(lpBalance - half);
+    });
   });
 
   describe("Remove Liquidity", function () {
@@ -155,9 +175,6 @@ describe("EvoPool", function () {
       const balAfter = await tokenB.balanceOf(trader.address);
       const received = balAfter - balBefore;
 
-      // With 0.30% fee on 100 tokens against 10k/10k pool:
-      // amountInAfterFee = 100 * (1 - 0.003) = 99.7
-      // amountOut = 10000 * 99.7 / (10000 + 99.7) ≈ 98.72
       expect(received).to.be.gt(ethers.parseEther("98"));
       expect(received).to.be.lt(ethers.parseEther("100"));
     });
@@ -203,7 +220,6 @@ describe("EvoPool", function () {
       const [r0After, r1After] = await pool.getReserves();
       const kAfter = r0After * r1After;
 
-      // k should increase because fee stays in the pool
       expect(kAfter).to.be.gte(kBefore);
     });
   });
@@ -213,7 +229,6 @@ describe("EvoPool", function () {
       const amount = ethers.parseEther("10000");
       await pool.connect(lp).addLiquidity(amount, amount);
 
-      // Switch to defensive mode via controller
       await pool.connect(controller).updateParameters(
         INITIAL_FEE_BPS,
         INITIAL_BETA,
@@ -223,22 +238,18 @@ describe("EvoPool", function () {
     });
 
     it("should have higher slippage for large trades (whale deterrent)", async function () {
-      // Small trade
       const smallIn = ethers.parseEther("10");
       const balBefore1 = await tokenB.balanceOf(trader.address);
       await pool.connect(trader).swap(true, smallIn, 0);
       const smallOut = (await tokenB.balanceOf(trader.address)) - balBefore1;
 
-      // Reset pool state — add more liq to approximate
       await pool.connect(lp).addLiquidity(ethers.parseEther("10000"), ethers.parseEther("10000"));
 
-      // Large trade (whale)
       const largeIn = ethers.parseEther("2000");
       const balBefore2 = await tokenB.balanceOf(trader.address);
       await pool.connect(trader).swap(true, largeIn, 0);
       const largeOut = (await tokenB.balanceOf(trader.address)) - balBefore2;
 
-      // Rate should be worse for large trade due to quadratic penalty
       const rateSmall = (BigInt(smallOut) * 10000n) / BigInt(smallIn);
       const rateLarge = (BigInt(largeOut) * 10000n) / BigInt(largeIn);
 
@@ -264,8 +275,6 @@ describe("EvoPool", function () {
       await pool.connect(trader).swap(true, ethers.parseEther("500"), 0);
       const received = (await tokenB.balanceOf(trader.address)) - balBefore;
 
-      // In Normal mode same trade would get more output
-      // Just verify swap completes and output is reasonable
       expect(received).to.be.gt(0);
       expect(received).to.be.lt(ethers.parseEther("500"));
     });
@@ -293,9 +302,6 @@ describe("EvoPool", function () {
     });
 
     it("should reject invalid curve mode", async function () {
-      // Solidity reverts with a panic (0x21 = enum cast out of range)
-      // when casting an out-of-range uint8 to a CurveMode enum,
-      // so we just expect any revert here.
       await expect(
         pool.connect(controller).updateParameters(30, 5000, 3, controller.address)
       ).to.be.reverted;
@@ -305,6 +311,84 @@ describe("EvoPool", function () {
       await expect(pool.connect(controller).updateParameters(45, 6000, 2, controller.address))
         .to.emit(pool, "ParametersUpdated")
         .withArgs(45, 6000, 2, controller.address);
+    });
+  });
+
+  describe("TWAP Oracle", function () {
+    beforeEach(async function () {
+      const amount = ethers.parseEther("10000");
+      await pool.connect(lp).addLiquidity(amount, amount);
+    });
+
+    it("should initialize TWAP accumulators after first swap", async function () {
+      // Initial values should be 0
+      const p0Before = await pool.price0CumulativeLast();
+
+      // Advance time and swap
+      await ethers.provider.send("evm_increaseTime", [60]);
+      await ethers.provider.send("evm_mine", []);
+      await pool.connect(trader).swap(true, ethers.parseEther("10"), 0);
+
+      const p0After = await pool.price0CumulativeLast();
+      expect(p0After).to.be.gt(p0Before);
+    });
+
+    it("should accumulate prices over multiple swaps", async function () {
+      await ethers.provider.send("evm_increaseTime", [60]);
+      await pool.connect(trader).swap(true, ethers.parseEther("10"), 0);
+      const p0First = await pool.price0CumulativeLast();
+
+      await ethers.provider.send("evm_increaseTime", [60]);
+      await pool.connect(trader).swap(false, ethers.parseEther("5"), 0);
+      const p0Second = await pool.price0CumulativeLast();
+
+      expect(p0Second).to.be.gt(p0First);
+    });
+  });
+
+  describe("Protocol Fee", function () {
+    beforeEach(async function () {
+      const amount = ethers.parseEther("10000");
+      await pool.connect(lp).addLiquidity(amount, amount);
+    });
+
+    it("should default to zero protocol fee", async function () {
+      expect(await pool.protocolFeeBps()).to.equal(0);
+    });
+
+    it("should allow owner to set protocol fee", async function () {
+      await pool.setProtocolFee(500); // 5% of swap fee
+      expect(await pool.protocolFeeBps()).to.equal(500);
+    });
+
+    it("should reject protocol fee above max", async function () {
+      await expect(
+        pool.setProtocolFee(2001)
+      ).to.be.revertedWithCustomError(pool, "ProtocolFeeTooHigh");
+    });
+
+    it("should accumulate protocol fees on swaps", async function () {
+      await pool.setProtocolFee(1000); // 10% of swap fee
+
+      await pool.connect(trader).swap(true, ethers.parseEther("100"), 0);
+
+      const accum0 = await pool.protocolFeeAccum0();
+      expect(accum0).to.be.gt(0);
+    });
+
+    it("should collect protocol fees to treasury", async function () {
+      await pool.setProtocolFee(1000);
+      await pool.connect(trader).swap(true, ethers.parseEther("100"), 0);
+
+      const accum0Before = await pool.protocolFeeAccum0();
+      expect(accum0Before).to.be.gt(0);
+
+      const treasuryBalBefore = await tokenA.balanceOf(owner.address);
+      await pool.collectProtocolFees();
+      const treasuryBalAfter = await tokenA.balanceOf(owner.address);
+
+      expect(treasuryBalAfter - treasuryBalBefore).to.equal(accum0Before);
+      expect(await pool.protocolFeeAccum0()).to.equal(0);
     });
   });
 });
