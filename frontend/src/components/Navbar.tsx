@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/agents", label: "Agents" },
   { href: "/swap", label: "Swap" },
   { href: "/liquidity", label: "Liquidity" },
+  { href: "/audit", label: "Audit" },
   { href: "/history", label: "History" },
   { href: "/settings", label: "Settings" },
   { href: "/demo", label: "Demo" },

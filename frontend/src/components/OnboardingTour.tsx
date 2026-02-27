@@ -29,6 +29,12 @@ const TOUR_STEPS: TourStep[] = [
     position: "bottom",
   },
   {
+    target: 'a[href="/audit"]',
+    title: "Audit Trail — BNB Greenfield",
+    content: "Every AI decision is stored on BNB Greenfield's decentralized storage for transparent, tamper-proof auditing.",
+    position: "bottom",
+  },
+  {
     target: 'a[href="/settings"]',
     title: "Agent Settings",
     content: "Register as an agent and submit parameter updates to the pool.",

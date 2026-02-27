@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@/hooks/useWallet";
+import { useGreenfield } from "@/hooks/useGreenfield";
+import { useToast } from "@/components/Toast";
 import { ethers } from "ethers";
 import { CONTROLLER_ABI, EVOPOOL_ABI, ADDRESSES, CURVE_MODES, BSC_TESTNET_RPC } from "@/lib/contracts";
+import type { AgentStrategyLog } from "@/lib/greenfield";
 
 /**
  * #30 — Configurable Strategy via UI
@@ -15,6 +18,8 @@ const readProvider = new ethers.JsonRpcProvider(BSC_TESTNET_RPC);
 
 export default function SettingsPage() {
   const { signer, connected, address } = useWallet();
+  const { uploadLog, uploading: greenfieldUploading } = useGreenfield();
+  const { addToast, updateToast } = useToast();
 
   // Pool state
   const [currentFee, setCurrentFee] = useState("0");
@@ -129,7 +134,7 @@ export default function SettingsPage() {
   }
 
   async function handleSubmit() {
-    if (!signer) return;
+    if (!signer || !address) return;
     setSubmitting(true);
     setError("");
     setTxHash("");
@@ -144,6 +149,54 @@ export default function SettingsPage() {
       await tx.wait();
       await loadPoolState();
       await loadAgentState();
+
+      // Upload strategy log to BNB Greenfield
+      const log: AgentStrategyLog = {
+        agentAddress: address,
+        timestamp: Date.now(),
+        action: "parameter_update",
+        data: {
+          feeBps: parseInt(newFee),
+          curveBeta: parseInt(newBeta),
+          curveMode: parseInt(newMode),
+          curveModeName: CURVE_MODES[parseInt(newMode)] ?? "Unknown",
+          reason: "Manual submission via Settings UI",
+          txHash: tx.hash,
+          poolState: {
+            reserve0: currentFee,
+            reserve1: currentBeta,
+            price: "N/A",
+            totalSupply: "N/A",
+          },
+        },
+        metadata: {
+          chainId: 97,
+          version: "1.0.0",
+        },
+      };
+      const toastId = addToast({ type: "loading", title: "📦 Uploading audit log to Greenfield…" });
+      try {
+        const url = await uploadLog(address, log);
+        if (url) {
+          updateToast(toastId, {
+            type: "success",
+            title: "Audit log stored on Greenfield!",
+            message: "Decentralized audit trail updated.",
+          });
+        } else {
+          updateToast(toastId, {
+            type: "info",
+            title: "Greenfield upload skipped",
+            message: "Audit log upload could not complete. TX still succeeded on-chain.",
+          });
+        }
+      } catch {
+        updateToast(toastId, {
+          type: "info",
+          title: "Greenfield upload failed",
+          message: "This doesn't affect your on-chain transaction.",
+        });
+      }
     } catch (err: any) {
       setError(err.reason || err.message);
     } finally {

@@ -42,7 +42,18 @@
                            │  3. Rule engine → suggestion    │
                            │  4. Sign + submit update TX     │
                            │  5. Compute APS → save snapshot │
-                           └─────────────────────────────────┘
+                           └──────────────┬──────────────────┘
+                                          │
+                           ┌──────────────▼──────────────────┐
+                           │    BNB Greenfield (Testnet)      │
+                           │    Decentralized Storage          │
+                           │                                   │
+                           │  • Bucket: evoarena-audit-logs    │
+                           │  • Agent strategy decision logs   │
+                           │  • Pool state snapshots           │
+                           │  • Tamper-proof audit trail       │
+                           │  • Public read access             │
+                           └───────────────────────────────────┘
 ```
 
 ## Mermaid Diagram
@@ -52,18 +63,22 @@ graph TD
     FE[Frontend - Next.js] -->|read state| POOL[EvoPool.sol]
     FE -->|read agents| CTRL[AgentController.sol]
     FE -->|trigger demo| API[/api/demo]
+    FE -->|browse audit logs| GF[BNB Greenfield]
     API -->|exec| AGENT[Off-Chain Agent]
     
     AGENT -->|poll reserves, fee, events| POOL
     AGENT -->|submitParameterUpdate| CTRL
     CTRL -->|updateParameters| POOL
     
+    AGENT -->|store decision log| GF
+    FE -->|upload strategy log| GF
+    
     POOL --- TKA[EvoToken A]
     POOL --- TKB[EvoToken B]
     
     CTRL -->|slash| OWNER[Owner / Guardian]
     
-    subgraph On-Chain
+    subgraph On-Chain [BSC Testnet]
         POOL
         CTRL
         TKA
@@ -74,6 +89,10 @@ graph TD
         AGENT
         APS[APS Calculator]
         AGENT --> APS
+    end
+    
+    subgraph Decentralized Storage [BNB Greenfield]
+        GF
     end
 ```
 

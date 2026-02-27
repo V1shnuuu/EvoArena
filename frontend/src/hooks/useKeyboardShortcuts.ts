@@ -12,15 +12,15 @@ export function useKeyboardShortcuts() {
   const router = useRouter();
 
   useEffect(() => {
-    const routes = ["/", "/agents", "/swap", "/liquidity", "/history", "/settings", "/demo"];
+    const routes = ["/", "/agents", "/swap", "/liquidity", "/audit", "/history", "/settings", "/demo"];
 
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
 
-      // Number keys 1-7 for navigation
+      // Number keys 1-8 for navigation
       const num = parseInt(e.key);
-      if (num >= 1 && num <= 7) {
+      if (num >= 1 && num <= 8) {
         e.preventDefault();
         router.push(routes[num - 1]);
         return;

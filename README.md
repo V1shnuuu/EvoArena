@@ -7,8 +7,8 @@
 ```
 ┌────────────────────────────────────────────┐
 │             Frontend UI (Next.js 14)       │
-│  Pool · Agents · Swap · Liquidity · History│
-│  Settings · Demo                           │
+│  Pool · Agents · Swap · Liquidity · Audit  │
+│  History · Settings · Demo                 │
 └──────────────────▲─────────────────────────┘
                    │
 ┌──────────────────┴─────────────────────────┐
@@ -32,6 +32,12 @@
 │  ERC-20 LP · TWAP Oracle · Protocol Fee   │
 │  3 Curve Modes · Balance-Diff Accounting   │
 │  EIP-2612 Permit                           │
+└──────────────────┬─────────────────────────┘
+                   │
+┌──────────────────▼─────────────────────────┐
+│      BNB Greenfield (Decentralized Storage)│
+│  Audit Logs · Strategy Decisions           │
+│  Pool Snapshots · Tamper-Proof Records     │
 └────────────────────────────────────────────┘
 ```
 
@@ -243,7 +249,40 @@ APS = 0.4·LPΔ + 0.3·SlippageReduction + 0.2·VolatilityCompression + 0.1·Fee
 
 After deployment, addresses are saved to `deployment.json`. Update your `.env` file with the NEXT_PUBLIC_ variants for the frontend.
 
-## 🔗 References
+## � BNB Greenfield Integration
+
+EvoArena integrates **BNB Greenfield** decentralized storage to create an immutable, tamper-proof audit trail of all AI agent decisions.
+
+### What We Store
+| Data Type | Description |
+|---|---|
+| **Agent Strategy Logs** | Every parameter update (fee, curveBeta, curveMode) is logged as a JSON object with timestamp, TX hash, and pool state |
+| **Pool Snapshots** | Reserve balances and price data at the time of each agent decision |
+| **Agent Metadata** | Registration events and strategy descriptions |
+
+### How It Works
+1. Agent submits parameter update on-chain via `AgentController.sol`
+2. After TX confirmation, a structured JSON log is uploaded to Greenfield bucket `evoarena-audit-logs`
+3. Logs are publicly readable — anyone can verify agent decisions
+4. The `/audit` page in the frontend browses and displays all stored logs
+
+### Greenfield Testnet Details
+| Property | Value |
+|---|---|
+| Chain ID | `greenfield_5600-1` |
+| RPC | `https://gnfd-testnet-fullnode-tendermint-us.bnbchain.org` |
+| Storage Provider | `https://gnfd-testnet-sp1.bnbchain.org` |
+| Bucket | `evoarena-audit-logs` |
+| Explorer | [testnet.greenfieldscan.com](https://testnet.greenfieldscan.com/) |
+| SDK | `@bnb-chain/greenfield-js-sdk v2.2.2` |
+
+### Why Greenfield?
+- **Transparency**: All AI agent decisions are publicly auditable
+- **Immutability**: Stored on decentralized storage, not a centralized database
+- **BNB Ecosystem**: Bridges BSC smart contracts with Greenfield storage
+- **Cross-Chain**: Same wallet works on both BSC and Greenfield
+
+## �🔗 References
 
 - [Optimal Dynamic Fees for AMMs](https://arxiv.org/abs/2106.14404)
 - [Uniswap v3 Concentrated Liquidity](https://docs.uniswap.org/concepts/protocol/concentrated-liquidity)
