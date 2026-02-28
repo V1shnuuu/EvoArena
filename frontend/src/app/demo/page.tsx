@@ -248,8 +248,8 @@ export default function DemoPage() {
           <div>
             <h4 className="font-bold mb-2 text-[var(--green)]">✅ EvoPool (Agent-Controlled)</h4>
             <ul className="space-y-1 text-[var(--muted)]">
-              <li>• Fee: <span className="text-white font-bold">{state?.feeBps || "?"} bps</span> (AI-tuned per epoch)</li>
-              <li>• Curve: <span className="text-white font-bold">{state?.curveModeName || "?"}</span></li>
+              <li>• Fee: <span className="text-[var(--foreground)] font-bold">{state?.feeBps || "?"} bps</span> (AI-tuned per epoch)</li>
+              <li>• Curve: <span className="text-[var(--foreground)] font-bold">{state?.curveModeName || "?"}</span></li>
               <li>• Whale defense: {state?.curveMode === 1 ? <span className="text-[var(--green)]">Active ✅ (quadratic penalty)</span> : "Standby"}</li>
               <li>• Vol adaptive: {state?.curveMode === 2 ? <span className="text-[var(--yellow)]">Active ✅ (spread widening)</span> : "Standby"}</li>
               <li>• LPs protected by dynamic curve selection</li>

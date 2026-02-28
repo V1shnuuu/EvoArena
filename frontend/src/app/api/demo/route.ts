@@ -78,7 +78,7 @@ export async function POST() {
 
     // ── Fallback: read current on-chain state via ethers ────────────
     const { ethers } = await import("ethers");
-    const rpc = process.env.NEXT_PUBLIC_BSC_RPC || "https://data-seed-prebsc-1-s1.binance.org:8545/";
+    const rpc = process.env.NEXT_PUBLIC_RPC_URL || "https://bsc-testnet-rpc.publicnode.com";
     const poolAddr = process.env.NEXT_PUBLIC_EVOPOOL_ADDRESS || "";
 
     if (!poolAddr) {

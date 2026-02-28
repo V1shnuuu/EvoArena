@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWallet } from "@/hooks/useWallet";
 import { usePoolState } from "@/hooks/useEvoPool";
@@ -31,7 +31,13 @@ export default function LiquidityPage() {
       setLpBalance(ethers.formatEther(bal));
     } catch { setLpBalance("0"); }
   };
-  if (connected && lpBalance === null) fetchLPBalance();
+
+  // Fetch LP balance on connect (instead of calling during render)
+  useEffect(() => {
+    if (connected && address) {
+      fetchLPBalance();
+    }
+  }, [connected, address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddLiquidity = async () => {
     if (!signer || !connected) return;

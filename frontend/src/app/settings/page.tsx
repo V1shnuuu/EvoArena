@@ -163,8 +163,8 @@ export default function SettingsPage() {
           reason: "Manual submission via Settings UI",
           txHash: tx.hash,
           poolState: {
-            reserve0: currentFee,
-            reserve1: currentBeta,
+            reserve0: "N/A",
+            reserve1: "N/A",
             price: "N/A",
             totalSupply: "N/A",
           },
@@ -221,15 +221,15 @@ export default function SettingsPage() {
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
             <p className="text-xs text-[var(--muted)]">Fee (bps)</p>
-            <p className="text-xl font-mono text-white">{currentFee}</p>
+            <p className="text-xl font-mono text-[var(--foreground)]">{currentFee}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--muted)]">Curve Beta</p>
-            <p className="text-xl font-mono text-white">{currentBeta}</p>
+            <p className="text-xl font-mono text-[var(--foreground)]">{currentBeta}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--muted)]">Curve Mode</p>
-            <p className="text-xl font-mono text-white">{CURVE_MODES[currentMode] || "Unknown"}</p>
+            <p className="text-xl font-mono text-[var(--foreground)]">{CURVE_MODES[currentMode] || "Unknown"}</p>
           </div>
         </div>
       </section>
@@ -249,7 +249,7 @@ export default function SettingsPage() {
                 step="0.001"
                 value={bondInput}
                 onChange={(e) => setBondInput(e.target.value)}
-                className="mt-1 w-full bg-[#1E2329] text-white rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
+                className="mt-1 w-full bg-[var(--bg)] text-[var(--foreground)] rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
               />
             </div>
             <button
@@ -299,7 +299,7 @@ export default function SettingsPage() {
                 max="500"
                 value={newFee}
                 onChange={(e) => setNewFee(e.target.value)}
-                className="mt-1 w-full bg-[#1E2329] text-white rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
+                className="mt-1 w-full bg-[var(--bg)] text-[var(--foreground)] rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
               />
               <p className="text-xs text-[var(--muted)] mt-1">Current: {currentFee}</p>
             </div>
@@ -311,7 +311,7 @@ export default function SettingsPage() {
                 max="10000"
                 value={newBeta}
                 onChange={(e) => setNewBeta(e.target.value)}
-                className="mt-1 w-full bg-[#1E2329] text-white rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
+                className="mt-1 w-full bg-[var(--bg)] text-[var(--foreground)] rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
               />
               <p className="text-xs text-[var(--muted)] mt-1">Current: {currentBeta}</p>
             </div>
@@ -320,7 +320,7 @@ export default function SettingsPage() {
               <select
                 value={newMode}
                 onChange={(e) => setNewMode(e.target.value)}
-                className="mt-1 w-full bg-[#1E2329] text-white rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
+                className="mt-1 w-full bg-[var(--bg)] text-[var(--foreground)] rounded-lg px-3 py-2 text-sm border border-[var(--border)] focus:border-[var(--accent)] focus:outline-none"
               >
                 {CURVE_MODES.map((mode, i) => (
                   <option key={i} value={i}>
@@ -360,8 +360,8 @@ export default function SettingsPage() {
           <li><strong className="text-[var(--accent)]">Normal</strong>: Standard constant-product. Good for stable markets.</li>
           <li><strong className="text-[var(--accent)]">Defensive</strong>: Higher slippage for large trades. Use during whale activity.</li>
           <li><strong className="text-[var(--accent)]">VolatilityAdaptive</strong>: Linear penalty scaling. Best for volatile markets.</li>
-          <li>Lower <strong className="text-white">feeBps</strong> attracts more volume; higher fees protect against IL.</li>
-          <li>Higher <strong className="text-white">curveBeta</strong> concentrates liquidity around the current price.</li>
+          <li>Lower <strong className="text-[var(--foreground)]">feeBps</strong> attracts more volume; higher fees protect against IL.</li>
+          <li>Higher <strong className="text-[var(--foreground)]">curveBeta</strong> concentrates liquidity around the current price.</li>
         </ul>
       </section>
     </main>

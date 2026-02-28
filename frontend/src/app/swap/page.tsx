@@ -38,15 +38,18 @@ export default function SwapPage() {
   }, [state]);
 
   const estimateOutput = () => {
-    if (!state || !amountIn || isNaN(Number(amountIn))) return "0";
+    if (!state || !amountIn || isNaN(Number(amountIn)) || Number(amountIn) <= 0) return "0";
     const inWei = Number(amountIn);
     const r0 = Number(state.reserve0);
     const r1 = Number(state.reserve1);
     const reserveIn = direction === "0to1" ? r0 : r1;
     const reserveOut = direction === "0to1" ? r1 : r0;
+    if (reserveIn <= 0 || reserveOut <= 0) return "0";
     const fee = state.feeBps / 10000;
     const effectiveIn = inWei * (1 - fee);
-    const out = (reserveOut * effectiveIn) / (reserveIn + effectiveIn);
+    const denominator = reserveIn + effectiveIn;
+    if (denominator <= 0) return "0";
+    const out = (reserveOut * effectiveIn) / denominator;
     return out.toFixed(6);
   };
 
@@ -56,11 +59,14 @@ export default function SwapPage() {
     const r1 = Number(state.reserve1);
     const reserveIn = direction === "0to1" ? r0 : r1;
     const reserveOut = direction === "0to1" ? r1 : r0;
+    if (reserveIn <= 0 || reserveOut <= 0) return "0.00";
     const spotPrice = reserveOut / reserveIn;
     const estOut = Number(estimateOutput());
+    if (estOut <= 0) return "0.00";
     const execPrice = estOut / Number(amountIn);
+    if (!isFinite(execPrice) || spotPrice <= 0) return "0.00";
     const impact = Math.abs(1 - execPrice / spotPrice) * 100;
-    return impact.toFixed(2);
+    return isFinite(impact) ? impact.toFixed(2) : "0.00";
   };
 
   const minReceived = () => {
