@@ -1,294 +1,286 @@
-# EvoArena — Adaptive AI-Driven Liquidity Infrastructure for BNB Chain
+  # EvoArena
+  > **Adaptive AI-Driven Liquidity Infrastructure for BNB Chain**
 
-> A permissionless AI agent marketplace where autonomous agents compete to control AMM parameters, dynamically reshaping bonding curves, fees, and liquidity — outperforming static AMMs in capital efficiency and volatility control.
+  An autonomous liquidity protocol that dynamically adjusts automated market maker (AMM) parameters using off-chain AI agents. EvoArena optimizes liquidity efficiency and protects providers from impermanent loss by reacting to market volatility in real-time.
 
-## 🏗 Architecture
+  ---
 
-```
-┌────────────────────────────────────────────┐
-│             Frontend UI (Next.js 14)       │
-│  Pool · Agents · Swap · Liquidity · Audit  │
-│  History · Settings · Demo                 │
-└──────────────────▲─────────────────────────┘
-                   │
-┌──────────────────┴─────────────────────────┐
-│          Off-Chain Agent (Node.js)          │
-│  ML Strategy · Circuit Breaker · Backtester│
-│  Multi-Pool · Volatility · APS Calculator  │
-└──────────────────▲─────────────────────────┘
-                   │ signed tx
-┌──────────────────┴─────────────────────────┐
-│        AgentController.sol                 │
-│  Bounds · Cooldown · Slash · ERC-20 Bond   │
-└──────────────────▲─────────────────────────┘
-                   │
-┌──────────────────┴─────────────────────────┐
-│  EpochManager.sol  │    TimeLock.sol       │
-│  Competition · Rewards · Scoring           │
-└──────────────────▲─────────────────────────┘
-                   │
-┌──────────────────┴─────────────────────────┐
-│           EvoPool.sol (AMM)                │
-│  ERC-20 LP · TWAP Oracle · Protocol Fee   │
-│  3 Curve Modes · Balance-Diff Accounting   │
-│  EIP-2612 Permit                           │
-└──────────────────┬─────────────────────────┘
-                   │
-┌──────────────────▼─────────────────────────┐
-│      BNB Greenfield (Decentralized Storage)│
-│  Audit Logs · Strategy Decisions           │
-│  Pool Snapshots · Tamper-Proof Records     │
-└────────────────────────────────────────────┘
-```
+  ##  Project Overview
 
-## 📦 Repository Structure
+  Traditional AMMs (like Uniswap V2) use static fees and pricing curves. This "one-size-fits-all" approach fails during extreme market conditions:
+  - **Low Volatility:** High fees discourage volume.
+  - **High Volatility:** Low fees fail to compensate LPs for impermanent loss (IL).
 
-```
-contracts/                Solidity smart contracts (Hardhat)
-  EvoPool.sol             Adaptive AMM with ERC-20 LP, TWAP, protocol fees, EIP-2612 Permit
-  AgentController.sol     Agent registry, bounds, cooldown, slashing, ERC-20 token bonding
-  EpochManager.sol        On-chain epoch-based multi-agent competition
-  TimeLock.sol            Governance timelock (queue/execute/cancel)
-  EvoToken.sol            Minimal ERC-20 for protocol coordination
-  interfaces/             Contract interfaces (IEvoPool, IAgentController, IEpochManager)
+  **EvoArena** introduces a **Manager-Agent Architecture** where an off-chain AI strategy engine monitors market signals (volatility, whale watching, trade velocity) and optimizes the pool's configuration on-chain.
 
-test/                     Contract tests (Mocha + Chai, 152 passing)
-  AgentController.test.ts 45 tests — registration, updates, slashing, bonding
-  EvoPool.test.ts         38 tests — liquidity, swaps, TWAP, protocol fees, pause
-  EpochManager.test.ts    23 tests — epochs, proposals, finalization, rewards
-  TimeLock.test.ts        9 tests — queue, execute, cancel, access control
-  E2E.test.ts             13 tests — full lifecycle integration test
-  Invariant.test.ts       24 tests — K invariant, reserve positivity, TWAP monotonicity, LP proportionality, stress
+  All agent decisions are cryptographically signed and stored on **BNB Greenfield**, creating a decentralized, immutable audit trail of the AI's "thought process."
 
-scripts/                  Deploy, verify & demo scripts
-  deploy.ts               Full deployment with TimeLock governance transfer
-  demo-local.ts           One-command live simulation (11 scenarios)
+  ---
 
-agent/                    Off-chain Node.js agent
-  src/
-    index.ts              Main loop — multi-pool, ML integration, circuit breaker
-    executor.ts           On-chain execution with multicall batching
-    strategyEngine.ts     Rule-based strategy engine (3 curve modes)
-    mlStrategy.ts         Online linear regression ML model
-    backtester.ts         Historical backtesting framework
-    circuitBreaker.ts     Anomaly detection & auto-halt
-    volatility.ts         EMA-based volatility calculator
-    apsCalculator.ts      Agent Performance Score computation
-    config.ts             Environment configuration
-  state/                  APS snapshots & update logs
+  ##  Problem Being Addressed
 
-frontend/                 Next.js 14 dashboard (App Router + Tailwind)
-  src/app/
-    page.tsx              Pool overview with live charts
-    agents/page.tsx       Agent leaderboard
-    swap/page.tsx         Token swap UI
-    liquidity/page.tsx    Add/remove liquidity UI
-    history/page.tsx      Transaction history (Swaps, Liquidity, Parameters)
-    settings/page.tsx     Agent strategy configuration UI
-    demo/page.tsx         Interactive demo
-    api/agent-stats/      REST API for agent stats
-    api/aps/              APS scoring endpoint
-  src/hooks/
-    useEvoPool.ts         Pool state hook
-    useWallet.tsx         Multi-wallet context (MetaMask + WalletConnect)
-    usePolling.ts         Generic real-time polling hook
-  src/lib/
-    contracts.ts          ABIs, addresses, constants
-    wallet.ts             Multi-wallet connection (MetaMask, WalletConnect, injected)
-  src/components/
-    Charts.tsx            Recharts visualizations
-    WalletButton.tsx      Connect wallet button
+  Liquidity Providers (LPs) in DeFi face a dilemma:
+  1. **Static Fees:** Cannot capture value during high demand or attract volume during low demand.
+  2. **Impermanent Loss:** Fixed bonding curves ($x \cdot y = k$) are vulnerable to toxic flow during price crashes.
+  3. **Black Box Management:** Managed pools often lack transparency on *why* parameters were changed.
 
-subgraph/                 The Graph subgraph scaffold
-  subgraph.yaml           Data source configuration (EvoPool, Controller, EpochManager)
-  schema.graphql          Entity schema (Swap, Agent, Epoch, Proposal, etc.)
-  src/mapping.ts          Event handlers
+  **EvoArena solves this by:**
+  1. **Dynamic Parameter Adjustment:**
+    - **Fees:** 0.05% to 5.00% based on volatility.
+    - **Curve Beta:** Adjusts capital concentration.
+    - **Curve Mode:** Switches logic between *Normal*, *Defensive* (high volatility protection), and *Adaptive*.
+  2. **Transparent Audit Trail:** Every parameter change is logged to BNB Greenfield for public verification.
+  3. **ML-Based Optimization:** Agents use online learning to predict the optimal configuration that maximizes fee generation while minimizing IL.
 
-docs/                     Architecture, demo script, agent spec
-.github/workflows/ci.yml  3-job CI pipeline (test+coverage+lint, agent, frontend)
+  ---
+
+  ##  How The System Works
+
+  1. **Market Monitoring:** The Agent service watches pending transactions, block headers, and pool events.
+  2. **Feature Extraction:** Calculates metrics like `volatility index`, `buy/sell ratio`, and `whale impact`.
+  3. **Strategy Inference:** The ML Engine (`mlStrategy.ts`) predicts the best parameters (`fee`, `beta`, `mode`).
+  4. **On-Chain Execution:** The Agent sends a transaction to the `AgentController` contract.
+  5. **State Update:** `EvoPool` updates its internal logic (e.g., increasing fees during a crash).
+  6. **Data Availability:** Detailed decision reasoning is uploaded to a dedicated bucket on **BNB Greenfield**.
+
+  ---
+
+  ## ✨ Key Features
+
+  - **Adaptive AMM:** Supports 3 curve modes (Normal, Defensive, VolatilityAdaptive).
+  - **AI Strategy Engine:** Online linear regression model with historical backtesting capability.
+  - **Decentralized Audit Logs:** Integrity-verified storage of agent decisions on BNB Greenfield.
+  - **Circuit Breaker:** Automated emergency halt if reserves are drained or rapid updates occur.
+  - **Agent Performance Score (APS):** On-chain scoring system to reward efficient agents.
+  - **Governance Timelock:** Critical system upgrades are delayed for security.
+
+  ---
+
+  ##  System Architecture
+
+  The system consists of three core layers:
+
+  1. **Protocol Layer (Smart Contracts):** Holds funds, executes swaps, and enforces agent rules.
+  2. **Agent Layer (Off-chain):** Node.js service running the strategy engine.
+  3. **Data Layer (Greenfield):** Decentralized storage for strategy logs and historical performance.
+  4. **Interface Layer (Frontend):** Next.js dashboard for LPs and traders.
+
+  ### Architecture Diagram
+
+  ```mermaid
+  graph TD
+    User((Trader)) -->|Swap| Pool[EvoPool.sol]
+    LP((Liquidity Prov)) -->|Add/Remove Liq| Pool
+    
+    subgraph "Off-Chain Agent"
+        Feeds[Market Data Feeds] --> Engine[ML Strategy Engine]
+        Engine -->|Predict Params| Executor[Transaction Executor]
+    end
+    
+    Executor -->|Update Params| Controller[AgentController.sol]
+    Controller -->|Set Config| Pool
+    
+    Executor -.->|Log Decision| Greenfield[BNB Greenfield]
+    Frontend[Next.js App] -.->|Read Logs| Greenfield
+    Frontend -->|Read State| Pool
 ```
 
-## ✨ Features
+---
 
-### Smart Contracts
-- **EvoPool**: Adaptive AMM with 3 curve modes (Normal, Defensive, VolatilityAdaptive)
-- **ERC-20 LP Tokens**: Full ERC-20 composability with EIP-2612 Permit support
-- **TWAP Oracle**: Uniswap-V2-style time-weighted average price accumulators
-- **Protocol Fee Switch**: Configurable protocol fee (up to 20% of swap fee)
-- **Balance-Diff Accounting**: Safe token accounting via balance snapshots
-- **EpochManager**: On-chain multi-agent competition with scoring and rewards
-- **TimeLock**: Governance timelock for admin operations (24h–7d delay)
-- **ERC-20 Token Bonding**: Agents can stake ERC-20 tokens in addition to native bonds
-- **Emergency Pause**: Owner can halt swaps/deposits while allowing LP emergency exits
-- **Formal Slashing Criteria**: 3 enumerated conditions for agent slashing
-- **Rate Limiting**: `parameterUpdateBlock` tracking prevents flash-loan attacks
+##  Tech Stack
 
-### Off-Chain Agent
-- **ML Strategy Engine**: Online linear regression with confidence-weighted predictions
-- **Historical Backtesting**: Replay-based backtesting framework with strategy comparison
-- **Circuit Breaker**: Anomaly detection (reserve drain, price crash, rapid updates)
-- **Multi-Pool Support**: Single agent instance manages multiple pools
-- **Gas Optimization**: Multicall batching for on-chain execution
+  ### Frontend
+  - **Framework:** Next.js 14 (App Router)
+  - **Styling:** Tailwind CSS
+  - **Web3:** `ethers.js`, `@bnb-chain/greenfield-js-sdk`
+  - **Visualization:** Recharts
 
-### Frontend
-- **7 Pages**: Pool, Agents, Swap, Liquidity, History, Settings, Demo
-- **Multi-Wallet**: MetaMask + WalletConnect support
-- **Real-Time Polling**: Auto-refresh pool and agent data
-- **Agent Settings UI**: Submit parameter updates directly from the browser
-- **Transaction History**: Browse swaps, liquidity events, and parameter updates
-- **Mobile-Responsive**: Hamburger navigation for mobile devices
-- **Agent Stats API**: REST endpoint at `/api/agent-stats?address=0x...`
+  ### Backend / Agent
+  - **Runtime:** Node.js, TypeScript
+  - **AI/ML:** Custom Online Linear Regression (Gradient Descent)
+  - **Blockchain Interaction:** Hardhat, Ethers.js
 
-### DevOps
-- **3-Job CI Pipeline**: test+coverage+lint, agent build, frontend build
-- **Gas Snapshot**: Automated gas reporting as CI artifact
-- **BSC Testnet + Mainnet**: Dual-network Hardhat configuration
-- **Subgraph Scaffold**: Ready for The Graph deployment
+  ### Smart Contracts
+  - **Network:** BNB Chain (BST Testnet / Mainnet)
+  - **Language:** Solidity ^0.8.24
+  - **Libraries:** OpenZeppelin (ERC20, Ownable)
 
-## 🚀 Quick Start
+  ### Storage
+  - **Decentralized Storage:** BNB Greenfield (Bucket: `evoarena-audit-logs`)
 
-### Prerequisites
-- Node.js ≥ 18
-- npm or yarn
-- BSC Testnet (Chapel) RPC + funded wallet
+  ---
 
-### 1. Install dependencies
-```bash
-npm install
-```
+  ##  Project Structure
 
-### 2. Configure environment
-```bash
-cp .env.example .env
-# Fill in PRIVATE_KEY, BSC_TESTNET_RPC, BSCSCAN_API_KEY
-```
+  ```bash
+  EvoArena-1/
+  ├── contracts/              # Solidity Smart Contracts
+  │   ├── EvoPool.sol         # Core AMM logic with dynamic parameters
+  │   ├── AgentController.sol # Permissioned controller for agents
+  │   └── interfaces/         # Standard interfaces
+  ├── agent/                  # AI Strategy Agent
+  │   ├── src/
+  │   │   ├── mlStrategy.ts   # Machine learning model (Linear Regression)
+  │   │   ├── executor.ts     # Transaction submission logic
+  │   │   └── volatility.ts   # Market data feature extraction
+  ├── frontend/               # Next.js Web Application
+  │   ├── src/app/            # App Router pages
+  │   ├── src/lib/greenfield.ts # BNB Greenfield integration
+  │   └── src/components/     # React UI components
+  ├── scripts/                # Deployment and utility scripts
+  ├── subgraph/               # The Graph data indexing (optional)
+  └── docs/                   # Architecture documentation
+  ```
 
-### 3. Compile contracts
-```bash
-npx hardhat compile
-```
+  ---
 
-### 4. Run tests
-```bash
-npx hardhat test          # 152 tests
-npx hardhat coverage      # Coverage report
-npm run test:gas          # Gas usage report
-```
+  ##  Module Responsibilities
 
-### 5. Deploy to BSC Testnet
-```bash
-npx hardhat run scripts/deploy.ts --network bscTestnet
-```
+  ### Smart Contracts
+  - **EvoPool.sol:** The heart of the protocol. Manages reserves, swaps, and holds the current `curveMode` state.
+  - **AgentController.sol:** Acts as a gatekeeper. Only whitelisted agents can call this contract to relay updates to the pool.
+  - **EpochManager.sol:** Handles time-based constraints, ensuring agents don't update parameters too frequently (preventing griefing).
 
-### 6. Run the agent
-```bash
-cd agent && npm install
-npm run once              # Single epoch
-npm start                 # Continuous loop
-npm run backtest          # Historical backtesting
-```
+  ### AI Agent
+  - **Volatility Calculator:** Computes standard deviation of prices over sliding windows.
+  - **ML Engine:** Maintains a `weights` matrix. Adapts to new data points to minimize the error between *predicted* fee revenue and *actual* fee revenue.
+  - **Backtester:** `src/backtester.ts` allows widely simulating market conditions to validate strategy safety before deployment.
 
-### 7. Start frontend
-```bash
-cd frontend && npm install && npm run dev
-```
+  ### Frontend
+  - **Dashboard:** Displays real-time pool APY, Volume, and Current Config.
+  - **Audit Page:** Fetches JSON logs from Greenfield and renders them in a human-readable format.
+  - **Swap Interface:** Standard swap UI that reads the *current* dynamic fee before quoting.
 
-### 8. Full demo
-```bash
-./demo.sh          # Quick: live simulation only (~5s)
-./demo.sh full     # Full: compile + 152 tests + simulation + gas report
-```
+  ---
 
-## 📊 Test Coverage
+  ##  UML Diagrams
 
-152 tests passing across 6 test files.
+  ### Component Diagram
 
-| Contract | Statements | Branches | Functions | Lines |
-|----------|-----------|----------|-----------|-------|
-| AgentController.sol | 100% | 78.89% | 100% | 100% |
-| EvoPool.sol | 97.37% | 71.57% | 100% | 97.60% |
-| EpochManager.sol | 92.73% | 65.38% | 86.67% | 95.00% |
-| TimeLock.sol | 89.47% | 59.38% | 80.00% | 85.19% |
-| **All contracts** | **95.38%** | **70.86%** | **93.22%** | **95.92%** |
+  ```mermaid
+  graph TD
+      subgraph OnChain [On-Chain]
+          EvoPool[EvoPool]
+          AgentController[AgentController]
+      end
+      
+      subgraph OffChain [Off-Chain]
+          AgentService[Agent Service]
+          MLEngine[ML Engine]
+      end
+      
+      subgraph Storage [Storage]
+          Greenfield[BNB Greenfield]
+      end
+      
+      AgentService -->|Transactions| AgentController
+      AgentService -.->|Upload Logs| Greenfield
+      AgentController -.->|Manage| EvoPool
+      MLEngine -->|Signals| AgentService
+  ```
 
-## 📊 APS (Agent Performance Score)
+  ### Sequence Diagram: Adaptive Update
 
-Each epoch the agent computes:
+  ```mermaid
+  sequenceDiagram
+      participant Market
+      participant Agent
+      participant Controller
+      participant EvoPool
+      participant Greenfield
 
-| Component | Weight | Formula |
-|-----------|--------|---------|
-| LP Return Δ | 0.40 | `(lpReturn_agent - lpReturn_static) / lpReturn_static` |
-| Slippage Reduction | 0.30 | `1 - (avgSlippage_agent / avgSlippage_static)` |
-| Volatility Compression | 0.20 | `(σ_static - σ_agent) / σ_static` |
-| Fee Revenue | 0.10 | `feeRevenue_agent / totalVolume` |
+      Market->>Agent: High Volatility Detected
+      Agent->>Agent: Calculate New Params (Fee++, Beta--)
+      Agent->>Greenfield: Upload Decision JSON
+      Greenfield-->>Agent: Returns Object ID
+      Agent->>Controller: updateParams(fee=300, beta=8000)
+      Controller->>EvoPool: setPoolParams(...)
+      EvoPool->>EvoPool: Update State (Fee=3.0%)
+  ```
 
-```
-APS = 0.4·LPΔ + 0.3·SlippageReduction + 0.2·VolatilityCompression + 0.1·FeeRevenue
-```
+  ---
 
-## 🔐 Security Model
+  ##  Setup Instructions
 
-| Constraint | Default | Configurable |
-|------------|---------|-------------|
-| Max fee change per update | 50 bps | ✅ |
-| Max curveBeta change | 2000 (0.2 scaled) | ✅ |
-| Cooldown between updates | 5 minutes | ✅ |
-| Minimum agent bond | 0.01 tBNB | ✅ |
-| Max fee cap | 500 bps (5%) | ✅ |
-| Protocol fee cap | 2000 bps (20%) | ✅ |
-| Governance timelock | 24h minimum | ✅ |
-| Emergency pause | Owner only | ✅ |
-| Formal slashing criteria | 3 conditions | ✅ |
+  ### Prerequisites
+  - Node.js v18+
+  - Git
+  - BNB Testnet Wallet with tBNB
 
-### Slashing Conditions
-1. **Excessive Deviation**: Parameters deviate >200bps from optimal in a single update
-2. **Rapid Oscillation**: >5 updates within 10 minutes suggesting manipulation
-3. **Manipulation Detected**: Evidence of coordinated front-running or sandwich attacks
+  ### 1. Installation
+  ```bash
+  # Clone repository
+  git clone https://github.com/yourusername/evoarena.git
+  cd evoarena
 
-## 🔗 Contract Addresses
+  # Install dependencies
+  npm install
+  cd frontend && npm install && cd ..
+  cd agent && npm install && cd ..
+  ```
 
-After deployment, addresses are saved to `deployment.json`. Update your `.env` file with the NEXT_PUBLIC_ variants for the frontend.
+  ### 2. Environment Variables
+  Create `.env` in the root:
+  ```env
+  PRIVATE_KEY=your_private_key_here
+  BSC_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+  GREENFIELD_RPC=https://gnfd-testnet-fullnode-tendermint-us.bnbchain.org
+  ```
 
-## � BNB Greenfield Integration
+  ### 3. Deploy Contracts
+  ```bash
+  npx hardhat run scripts/deploy.ts --network bscTestnet
+  # Copy the output addresses to agent/src/config.ts and frontend/src/lib/contracts.ts
+  ```
 
-EvoArena integrates **BNB Greenfield** decentralized storage to create an immutable, tamper-proof audit trail of all AI agent decisions.
+  ### 4. Run the AI Agent
+  ```bash
+  cd agent
+  # Run in ML mode (learns from active market)
+  npm run ml
+  ```
 
-### What We Store
-| Data Type | Description |
-|---|---|
-| **Agent Strategy Logs** | Every parameter update (fee, curveBeta, curveMode) is logged as a JSON object with timestamp, TX hash, and pool state |
-| **Pool Snapshots** | Reserve balances and price data at the time of each agent decision |
-| **Agent Metadata** | Registration events and strategy descriptions |
+  ### 5. Start Frontend
+  ```bash
+  cd frontend
+  npm run dev
+  # Open http://localhost:3000
+  ```
 
-### How It Works
-1. Agent submits parameter update on-chain via `AgentController.sol`
-2. After TX confirmation, a structured JSON log is uploaded to Greenfield bucket `evoarena-audit-logs`
-3. Logs are publicly readable — anyone can verify agent decisions
-4. The `/audit` page in the frontend browses and displays all stored logs
+  ---
 
-### Greenfield Testnet Details
-| Property | Value |
-|---|---|
-| Chain ID | `greenfield_5600-1` |
-| RPC | `https://gnfd-testnet-fullnode-tendermint-us.bnbchain.org` |
-| Storage Provider | `https://gnfd-testnet-sp1.bnbchain.org` |
-| Bucket | `evoarena-audit-logs` |
-| Explorer | [testnet.greenfieldscan.com](https://testnet.greenfieldscan.com/) |
-| SDK | `@bnb-chain/greenfield-js-sdk v2.2.2` |
+  ## 📡 API Documentation (Frontend Routes)
 
-### Why Greenfield?
-- **Transparency**: All AI agent decisions are publicly auditable
-- **Immutability**: Stored on decentralized storage, not a centralized database
-- **BNB Ecosystem**: Bridges BSC smart contracts with Greenfield storage
-- **Cross-Chain**: Same wallet works on both BSC and Greenfield
+  The frontend exposes simple internal APIs for the UI to consume:
 
-## �🔗 References
+  | Route | Method | Description |
+  |-------|--------|-------------|
+  | `/api/agent-stats` | GET | Returns current agent performance metrics |
+  | `/api/history` | GET | Fetches historical changes from Greenfield |
+  | `/api/audit` | GET | Verifies on-chain param changes against Greenfield logs |
 
-- [Optimal Dynamic Fees for AMMs](https://arxiv.org/abs/2106.14404)
-- [Uniswap v3 Concentrated Liquidity](https://docs.uniswap.org/concepts/protocol/concentrated-liquidity)
-- [Bancor IL Protection](https://docs.bancor.network/)
-- [Autonomous AI Agents in DeFi](https://arxiv.org/abs/2312.08027)
+  ---
 
-## 📝 License
+  ## Example End-to-End Flow
 
-MIT — see [LICENSE](./LICENSE).
+  1. **User Action:** A user opens the frontend to swap USDT for BNB.
+  2. **System Check:** The frontend queries the `EvoPool` contract for the current fee rate.
+  3. **Agent Intervention:** Just prior, the Agent detected high volatility (price swinging rapidly). It increased the fee from 0.3% to 1.0% to protect LPs.
+  4. **Execution:** The user accepts the higher fee (or waits), and the swap executes. To the user, it looks like a standard swap.
+  5. **Verification:** The user can go to the "Audit" tab and see the exact timestamp when the Agent raised the fee, along with the "High Volatility" reason code stored on Greenfield.
+
+  ---
+
+  ##  Limitations & Future Improvements
+
+  1. **Centralized Agent Execution:** Currently, the agent is run by a trusted operator. Future versions will use a decentralized network of agents (AVS).
+  2. **Model Privacy:** Strategy weights are currently visible in the codebase. ZK-ML could hide the model while proving correct execution.
+  3. **Single Asset Pair:** The current version supports one pair per pool. Multi-token pools (Balancer style) are planned.
+
+  ---
+
+  ##  Hackathon Note
+
+  This project demonstrates a full-stack integration of **DeFi + AI + DePIN (Storage)**. We moved the heavy compute (Strategy Analysis) off-chain to save gas, while using **BNB Greenfield** to ensure that "Off-chain" does not mean "Opaque".
+
+  *Built for the BNB Chain Hackathon 2026. EvoArena Team.*
